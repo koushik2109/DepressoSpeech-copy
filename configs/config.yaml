@@ -1,0 +1,25 @@
+# DepressoSpeech Configuration
+# Pipeline settings for depression severity prediction from speech
+
+# Dataset
+dataset_path: data/raw/DAIC-WOZ
+
+# Feature caching
+cache_dir: data/cached_features
+cache_index: data/cache_index/feature_index.json
+
+# Audio preprocessing
+sample_rate: 16000
+audio_format: wav
+
+# Acoustic features
+n_mfcc: 13
+n_fft: 2048
+hop_length: 512
+
+# Silence trimming
+top_db: 20
+
+# Training
+batch_size: 32
+num_workers: 4
