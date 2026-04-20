@@ -1,9 +1,10 @@
-﻿# Python cache
+# Python cache
 __pycache__/
 *.pyc
 
 # Virtual environment
 venv/
+.venv/
 
 # Dataset (do not commit)
 data/raw/
@@ -17,3 +18,9 @@ logs/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Env files
+.env
+backend/.env
+Model/.env
+Depression-UI/.env

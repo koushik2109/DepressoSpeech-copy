@@ -211,14 +211,19 @@ class TextExtractor:
         audio_chunks: np.ndarray,
         sr: int = 16000,
         chunk_start_times: Optional[List[float]] = None,
+        batch_size: int = 8,
     ) -> List[Dict]:
         """
-        [INFERENCE_PATH] Transcribe audio chunks using Whisper Base.
+        [INFERENCE_PATH] Transcribe audio chunks using Whisper Base (batched).
+
+        Processes all chunks in batches instead of one-by-one to minimize
+        model overhead and GPU round-trips (major latency win).
 
         Args:
             audio_chunks: np.ndarray of shape (num_chunks, samples)
             sr: Sample rate (default 16000)
             chunk_start_times: Start time of each chunk for global timestamps
+            batch_size: Number of chunks to process per Whisper forward pass
 
         Returns:
             List of dicts with keys: 'text', 'chunk_idx', 'start_time', 'end_time'
@@ -227,46 +232,46 @@ class TextExtractor:
         import torch
 
         device = self._get_device()
-        results = []
+        num_chunks = len(audio_chunks)
+        all_texts: List[str] = []
 
-        for i, chunk in enumerate(audio_chunks):
+        # Process in batches — one Whisper forward pass per batch
+        for batch_start in range(0, num_chunks, batch_size):
+            batch = audio_chunks[batch_start: batch_start + batch_size]
             try:
-                # Process audio for Whisper
                 inputs = self._whisper_processor(
-                    chunk, sampling_rate=sr, return_tensors="pt"
+                    list(batch), sampling_rate=sr, return_tensors="pt", padding=True
                 )
                 input_features = inputs.input_features.to(device)
-
-                # Generate transcription
                 with torch.no_grad():
                     predicted_ids = self._whisper_model.generate(input_features)
-
-                text = self._whisper_processor.batch_decode(
+                texts = self._whisper_processor.batch_decode(
                     predicted_ids, skip_special_tokens=True
-                )[0].strip()
-
-                # Calculate global timestamps
-                chunk_start = chunk_start_times[i] if chunk_start_times else i * (len(chunk) / sr)
-                chunk_end = chunk_start + len(chunk) / sr
-
-                results.append({
-                    'text': text,
-                    'chunk_idx': i,
-                    'start_time': chunk_start,
-                    'end_time': chunk_end,
-                })
+                )
+                all_texts.extend([t.strip() for t in texts])
             except Exception as e:
-                logger.error(f"[DEBUG_POINT] Chunk {i} transcription failed: {e}")
-                results.append({
-                    'text': '',
-                    'chunk_idx': i,
-                    'start_time': 0.0,
-                    'end_time': 0.0,
-                })
+                logger.error(
+                    f"[DEBUG_POINT] Batch [{batch_start}:{batch_start+len(batch)}] "
+                    f"transcription failed: {e}"
+                )
+                all_texts.extend([""] * len(batch))
+
+        results = []
+        for i, text in enumerate(all_texts):
+            chunk_len = len(audio_chunks[i])
+            chunk_start = chunk_start_times[i] if chunk_start_times else i * (chunk_len / sr)
+            chunk_end = chunk_start + chunk_len / sr
+            results.append({
+                'text': text,
+                'chunk_idx': i,
+                'start_time': chunk_start,
+                'end_time': chunk_end,
+            })
 
         non_empty = sum(1 for r in results if r['text'])
         logger.info(
-            f"[INFERENCE_PATH] Transcribed {non_empty}/{len(results)} chunks"
+            f"[INFERENCE_PATH] Transcribed {non_empty}/{len(results)} chunks "
+            f"(batch_size={batch_size})"
         )
         return results
 

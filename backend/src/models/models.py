@@ -1,0 +1,188 @@
+"""SQLAlchemy ORM models for MindScope."""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    SmallInteger,
+    Float,
+    Text,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+)
+from sqlalchemy.orm import relationship
+
+from database.base import Base
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
+
+
+def _uuid():
+    return str(uuid.uuid4())
+
+
+# ── Users ──────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    role = Column(String(16), nullable=False)  # patient | doctor | admin
+    name = Column(String(120), nullable=False)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(Text, nullable=False)
+
+    # Patient fields
+    age = Column(SmallInteger, nullable=True)
+    basic_info = Column(Text, nullable=True)
+
+    # Doctor fields
+    specialization = Column(String(120), nullable=True)
+    license_number = Column(String(80), nullable=True)
+    clinic_name = Column(String(160), nullable=True)
+    years_experience = Column(SmallInteger, nullable=True)
+
+    # Email verification
+    is_verified = Column(Boolean, default=False)
+    verification_otp = Column(String(6), nullable=True)
+    otp_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    status = Column(String(16), default="active")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    assessments = relationship("Assessment", back_populates="user", lazy="selectin")
+    media_files = relationship("MediaFile", back_populates="owner", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_users_role", "role"),
+        Index("ix_users_created_at", "created_at"),
+    )
+
+
+# ── Assessments ────────────────────────────────────────
+
+class Assessment(Base):
+    __tablename__ = "assessments"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    question_set_version = Column(String(64), default="phq8_v1")
+    score_total = Column(SmallInteger, nullable=True)
+    severity = Column(String(32), nullable=True)
+    recording_count = Column(SmallInteger, default=0)
+    status = Column(String(16), default="completed")  # completed | processing | failed
+
+    # ML inference results
+    ml_score = Column(Float, nullable=True)
+    ml_severity = Column(String(32), nullable=True)
+    ml_num_chunks = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    user = relationship("User", back_populates="assessments")
+    answers = relationship("AssessmentAnswer", back_populates="assessment", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_assessments_user_created", "user_id", "created_at"),
+        Index("ix_assessments_severity", "severity", "created_at"),
+    )
+
+
+# ── Assessment Answers ─────────────────────────────────
+
+class AssessmentAnswer(Base):
+    __tablename__ = "assessment_answers"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    assessment_id = Column(String(36), ForeignKey("assessments.id"), nullable=False, index=True)
+    question_id = Column(Integer, nullable=False)
+    score = Column(SmallInteger, nullable=False)
+    duration_sec = Column(Float, nullable=True)
+    audio_file_id = Column(String(36), ForeignKey("media_files.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    assessment = relationship("Assessment", back_populates="answers")
+    audio_file = relationship("MediaFile", lazy="selectin")
+
+
+# ── Media Files ────────────────────────────────────────
+
+class MediaFile(Base):
+    __tablename__ = "media_files"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    owner_user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    original_filename = Column(String(255), nullable=True)
+    storage_key = Column(Text, nullable=False)
+    mime_type = Column(String(80), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    duration_sec = Column(Float, nullable=True)
+    status = Column(String(16), default="available")
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    owner = relationship("User", back_populates="media_files")
+
+
+# ── Assessment ML Details ─────────────────────────────
+
+class AssessmentMLDetail(Base):
+    __tablename__ = "assessment_ml_details"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    assessment_id = Column(String(36), ForeignKey("assessments.id"), nullable=False, index=True)
+    confidence_mean = Column(Float, nullable=True)
+    confidence_std = Column(Float, nullable=True)
+    ci_lower = Column(Float, nullable=True)
+    ci_upper = Column(Float, nullable=True)
+    audio_quality_score = Column(Float, nullable=True)
+    audio_snr_db = Column(Float, nullable=True)
+    audio_speech_prob = Column(Float, nullable=True)
+    behavioral_json = Column(Text, nullable=True)
+    inference_time_ms = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    assessment = relationship("Assessment", lazy="selectin")
+
+
+# ── Request Metrics ───────────────────────────────────
+
+class RequestMetric(Base):
+    __tablename__ = "request_metrics"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    endpoint = Column(String(255), nullable=False)
+    method = Column(String(8), nullable=False)
+    status_code = Column(SmallInteger, nullable=False)
+    latency_ms = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_request_metrics_created_at", "created_at"),
+    )
+
+
+# ── Processing Jobs ────────────────────────────────────
+
+class ProcessingJob(Base):
+    __tablename__ = "processing_jobs"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    assessment_id = Column(String(36), ForeignKey("assessments.id"), nullable=False, index=True)
+    job_type = Column(String(32), default="inference")
+    status = Column(String(16), default="queued")  # queued | running | succeeded | failed
+    progress_pct = Column(SmallInteger, default=0)
+    stage = Column(String(64), nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    assessment = relationship("Assessment", lazy="selectin")

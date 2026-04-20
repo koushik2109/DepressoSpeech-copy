@@ -1,0 +1,9 @@
+[project]
+name = "mindscope-backend"
+version = "1.0.0"
+description = "MindScope Depression Screening Backend"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
