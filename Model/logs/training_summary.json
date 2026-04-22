@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-04-18T12:00:00Z",
+  "note": "Restored from best_fusion.pt text branch (original 0.54 CCC model)",
+  "best_metrics": {
+    "ccc": 0.5422,
+    "rmse": 4.5635,
+    "mae": 3.5406,
+    "epoch": 145
+  },
+  "model_params": 2305,
+  "train_samples": 163,
+  "dev_samples": 56,
+  "artifacts": {
+    "best_model": "checkpoints/best_model.pt",
+    "normalizer": "checkpoints/scalers/feature_scalers.pkl",
+    "pca_reducer": "checkpoints/scalers/pca_reducer.pkl",
+    "training_curves": "logs/training_curves.json"
+  }
+}

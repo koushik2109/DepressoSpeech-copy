@@ -1,0 +1,21 @@
+2026-04-20 09:52:12 | INFO     | src.utils.logging_config                 | [CHECKPOINT] Logging initialized: console=INFO, file=DEBUG, path=logs/api_server_20260420_095212.log
+2026-04-20 09:52:12 | INFO     | __main__                                 | ============================================================
+2026-04-20 09:52:12 | INFO     | __main__                                 | DepressoSpeech API Server
+2026-04-20 09:52:12 | INFO     | __main__                                 | ============================================================
+2026-04-20 09:52:12 | INFO     | __main__                                 | Config:  configs/inference_config.yaml
+2026-04-20 09:52:12 | INFO     | __main__                                 | Host:    127.0.0.1
+2026-04-20 09:52:12 | INFO     | __main__                                 | Port:    8001
+2026-04-20 09:52:12 | INFO     | __main__                                 | Reload:  False
+2026-04-20 09:52:12 | INFO     | __main__                                 | TLS:     disabled
+2026-04-20 09:52:12 | INFO     | __main__                                 | Log:     logs/api_server_20260420_095212.log
+2026-04-20 09:52:12 | INFO     | __main__                                 | ============================================================
+2026-04-20 09:52:12 | WARNING  | __main__                                 | [SEC-5] TLS is disabled. Patient audio and PHQ-8 scores will be transmitted in plaintext. Set --ssl-certfile and --ssl-keyfile for HIPAA compliance.
+2026-04-20 09:52:12 | DEBUG    | asyncio                                  | Using selector: EpollSelector
+2026-04-20 09:52:12 | INFO     | src.api.app                              | [API] Loading config from: configs/inference_config.yaml
+2026-04-20 09:52:12 | INFO     | src.api.app                              | [API] Initializing FUSION pipeline (text + audio + behavioral)
+2026-04-20 09:52:12 | INFO     | src.inference.fusion_pipeline            | FusionInferencePipeline initialized: fusion=best_fusion.pt, text=best_model.pt
+2026-04-20 09:52:12 | INFO     | src.api.app                              | [API] Inference pipeline loaded — ready to serve
+2026-04-20 09:52:12 | INFO     | src.db.database                          | [DB] Engine created: sqlite:///data/depresso.db
+2026-04-20 09:52:12 | INFO     | src.db.database                          | [DB] Database initialized — all tables created
+2026-04-20 09:52:12 | INFO     | src.api.app                              | [API] Database tracker initialized
+2026-04-20 11:09:08 | INFO     | src.api.app                              | [API] Shutdown complete
