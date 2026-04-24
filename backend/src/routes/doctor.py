@@ -76,11 +76,17 @@ async def doctor_alerts(
     )
     assessments = result.scalars().all()
 
+    # Batch-fetch all patients to avoid N+1 queries
+    user_ids = list({a.user_id for a in assessments})
+    if user_ids:
+        patients_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        patients_map = {p.id: p for p in patients_result.scalars().all()}
+    else:
+        patients_map = {}
+
     items = []
     for a in assessments:
-        # Fetch the patient for this assessment
-        patient_result = await db.execute(select(User).where(User.id == a.user_id))
-        patient = patient_result.scalar_one_or_none()
+        patient = patients_map.get(a.user_id)
         items.append({
             "assessmentId": a.id,
             "patient": {

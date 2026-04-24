@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { getCurrentUser, listAssessments, getMLDetails } from "../services/api.js";
+import {
+  getCurrentUser,
+  listAssessments,
+  getMLDetails,
+} from "../services/api.js";
 
 const severityTone = {
   Severe: "bg-red-50 text-red-700 border-red-200",
@@ -42,7 +46,8 @@ function MetricsPanel({ assessmentId }) {
   if (!data) {
     return (
       <div className="mt-4 rounded-xl bg-[#FFF9F0] border border-[#FFE5B4] p-4 text-xs text-[#B07D2C]">
-        ML analysis not available for this session (audio may still be processing or was not submitted).
+        ML analysis not available for this session (audio may still be
+        processing or was not submitted).
       </div>
     );
   }
@@ -53,10 +58,26 @@ function MetricsPanel({ assessmentId }) {
     <div className="mt-4 rounded-xl border border-[#D6E3DA] bg-[#F3FBF7] p-4 space-y-4">
       {/* Confidence */}
       <div>
-        <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">Prediction Confidence</p>
+        <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">
+          Prediction Confidence
+        </p>
         <div className="bg-white rounded-lg p-3 border border-[#E8E8E8]">
-          <MetricRow label="Confidence Mean" value={data.confidenceMean != null ? `${(data.confidenceMean * 100).toFixed(1)}%` : null} />
-          <MetricRow label="Confidence Std Dev" value={data.confidenceStd != null ? `±${(data.confidenceStd * 100).toFixed(1)}%` : null} />
+          <MetricRow
+            label="Confidence Mean"
+            value={
+              data.confidenceMean != null
+                ? `${(data.confidenceMean * 100).toFixed(1)}%`
+                : null
+            }
+          />
+          <MetricRow
+            label="Confidence Std Dev"
+            value={
+              data.confidenceStd != null
+                ? `±${(data.confidenceStd * 100).toFixed(1)}%`
+                : null
+            }
+          />
           <MetricRow
             label="95% CI"
             value={
@@ -65,29 +86,63 @@ function MetricsPanel({ assessmentId }) {
                 : null
             }
           />
-          <MetricRow label="Inference Time" value={data.inferenceTimeMs != null ? `${data.inferenceTimeMs.toFixed(0)} ms` : null} />
+          <MetricRow
+            label="Inference Time"
+            value={
+              data.inferenceTimeMs != null
+                ? `${data.inferenceTimeMs.toFixed(0)} ms`
+                : null
+            }
+          />
         </div>
       </div>
 
       {/* Audio Quality */}
       <div>
-        <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">Audio Quality</p>
+        <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">
+          Audio Quality
+        </p>
         <div className="bg-white rounded-lg p-3 border border-[#E8E8E8]">
-          <MetricRow label="Quality Score" value={data.audioQualityScore != null ? `${(data.audioQualityScore * 100).toFixed(1)}%` : null} />
-          <MetricRow label="SNR" value={data.audioSnrDb != null ? `${data.audioSnrDb.toFixed(1)} dB` : null} />
-          <MetricRow label="Speech Probability" value={data.audioSpeechProb != null ? `${(data.audioSpeechProb * 100).toFixed(1)}%` : null} />
+          <MetricRow
+            label="Quality Score"
+            value={
+              data.audioQualityScore != null
+                ? `${(data.audioQualityScore * 100).toFixed(1)}%`
+                : null
+            }
+          />
+          <MetricRow
+            label="SNR"
+            value={
+              data.audioSnrDb != null
+                ? `${data.audioSnrDb.toFixed(1)} dB`
+                : null
+            }
+          />
+          <MetricRow
+            label="Speech Probability"
+            value={
+              data.audioSpeechProb != null
+                ? `${(data.audioSpeechProb * 100).toFixed(1)}%`
+                : null
+            }
+          />
         </div>
       </div>
 
       {/* Behavioral */}
       {Object.keys(behavioral).length > 0 && (
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">Behavioral Signals</p>
+          <p className="text-xs uppercase tracking-[0.16em] font-semibold text-[#52B788] mb-2">
+            Behavioral Signals
+          </p>
           <div className="bg-white rounded-lg p-3 border border-[#E8E8E8]">
             {Object.entries(behavioral).map(([key, val]) => (
               <MetricRow
                 key={key}
-                label={key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                label={key
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase())}
                 value={typeof val === "number" ? val.toFixed(3) : String(val)}
               />
             ))}
@@ -129,7 +184,8 @@ export default function AssessmentHistory() {
     return <Navigate to="/signin" replace />;
   }
 
-  const toggleExpand = (id) => setExpandedId((prev) => (prev === id ? null : id));
+  const toggleExpand = (id) =>
+    setExpandedId((prev) => (prev === id ? null : id));
 
   return (
     <div className="pt-24 lg:pt-28 min-h-screen px-4 py-10 bg-[#F7F7F2]">
@@ -144,7 +200,8 @@ export default function AssessmentHistory() {
                 Your Past Assessments
               </h1>
               <p className="mt-2 text-[#5F6B65]">
-                Track how your PHQ-8 scores changed over time. Tap any session for detailed ML metrics.
+                Track how your PHQ-8 scores changed over time. Tap any session
+                for detailed ML metrics.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -220,18 +277,28 @@ export default function AssessmentHistory() {
                           <span className="ml-1 text-[#9AA49F]">
                             <svg
                               className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
-                              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2}
                             >
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M19 9l-7 7-7-7"
+                              />
                             </svg>
                           </span>
                         </div>
                       </div>
                       <p className="mt-3 text-sm text-[#5F6B65]">
                         Responses captured: {item.recordingCount || 0} / 8
-                        {item.mlSeverity && item.mlSeverity !== item.severity && (
-                          <span className="ml-3 text-xs text-[#9AA49F]">ML severity: {item.mlSeverity}</span>
-                        )}
+                        {item.mlSeverity &&
+                          item.mlSeverity !== item.severity && (
+                            <span className="ml-3 text-xs text-[#9AA49F]">
+                              ML severity: {item.mlSeverity}
+                            </span>
+                          )}
                       </p>
                     </button>
 

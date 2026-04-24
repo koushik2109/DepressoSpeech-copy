@@ -1,0 +1,1107 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DepressoSpeech – Unified API Documentation",
+    "description": "Comprehensive API documentation for the DepressoSpeech Depression Severity Prediction System.\n\n## Services\n\n| Service | Port | Description |\n|---------|------|-------------|\n| **MindScope Backend** | 8000 | Core application API – authentication, assessments, file management, doctor/admin dashboards |\n| **DepressoSpeech ML Model** | 8001 | ML inference API – PHQ-8 prediction from audio using eGeMAPS + MFCC + SBERT features |\n| **Frontend (Vite)** | 5173 | React SPA – patient/doctor/admin user interface |\n| **Swagger Docs** | 8080 | This documentation page |\n\n## Authentication\n- **Backend API**: JWT Bearer tokens via `/api/v1/auth/login`\n- **ML Model API**: Optional API key via `X-API-Key` header\n- **Admin**: Separate admin login via `/api/v1/auth/admin/login`\n\n## Architecture\nThe system follows a microservices pattern:\n1. Frontend sends requests to Backend (proxied via Vite in dev)\n2. Backend orchestrates business logic, stores data in SQLite\n3. Backend delegates ML inference to the Model service\n4. Model service processes audio and returns PHQ-8 predictions",
+    "version": "2.0.0",
+    "contact": {
+      "name": "DepressoSpeech Team – KMIT",
+      "email": "koushik@kmit.in"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api/v1",
+      "description": "MindScope Backend API"
+    },
+    {
+      "url": "http://localhost:8001",
+      "description": "DepressoSpeech ML Model API"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "User registration, login, OTP verification, password reset, and Google OAuth"
+    },
+    {
+      "name": "Assessments",
+      "description": "PHQ-8 depression assessments – create, list, and retrieve results"
+    },
+    {
+      "name": "Files",
+      "description": "Audio file upload for assessments"
+    },
+    {
+      "name": "Doctor Dashboard",
+      "description": "Doctor-specific analytics – patient summaries, alerts, and trends"
+    },
+    {
+      "name": "Admin Dashboard",
+      "description": "System administration – user management, metrics, ML health monitoring"
+    },
+    {
+      "name": "ML Prediction",
+      "description": "Depression severity prediction from audio files using the ML model"
+    },
+    {
+      "name": "ML Health",
+      "description": "ML model service health and status checks"
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new user",
+        "description": "Register a new patient or doctor account. An OTP is sent to the provided email for verification.",
+        "operationId": "register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "examples": {
+                "patient": {
+                  "summary": "Register as patient",
+                  "value": {
+                    "role": "patient",
+                    "name": "John Doe",
+                    "email": "john@example.com",
+                    "password": "securePass123",
+                    "age": 28,
+                    "basicInfo": "Student, first-time screening"
+                  }
+                },
+                "doctor": {
+                  "summary": "Register as doctor",
+                  "value": {
+                    "role": "doctor",
+                    "name": "Dr. Smith",
+                    "email": "smith@hospital.com",
+                    "password": "docSecure456",
+                    "specialization": "Psychiatry",
+                    "licenseNumber": "PSY-12345",
+                    "clinicName": "City Mental Health",
+                    "yearsExperience": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully. OTP sent for email verification.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegisterResponse" }
+              }
+            }
+          },
+          "409": { "description": "Email already registered" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/auth/verify-otp": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Verify email OTP",
+        "description": "Verify user email with the 6-digit OTP sent during registration.",
+        "operationId": "verifyOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyOtpRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Email verified successfully" },
+          "400": { "description": "Invalid OTP" },
+          "404": { "description": "Account not found" },
+          "410": { "description": "OTP expired" }
+        }
+      }
+    },
+    "/auth/resend-otp": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Resend OTP",
+        "description": "Generate and send a new OTP to the user's email.",
+        "operationId": "resendOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResendOtpRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "New OTP sent" },
+          "404": { "description": "Account not found" },
+          "500": { "description": "Failed to send email" }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request password reset",
+        "description": "Send an OTP to the user's email for password reset. Does not reveal whether the email exists.",
+        "operationId": "forgotPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OTP sent if email is registered" }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Reset password with OTP",
+        "description": "Reset user password after validating the OTP received via email.",
+        "operationId": "resetPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Password reset successfully" },
+          "400": { "description": "Invalid OTP" },
+          "404": { "description": "Account not found" },
+          "410": { "description": "OTP expired" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login with email and password",
+        "description": "Authenticate with email and password. Returns JWT access and refresh tokens.",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials" },
+          "423": { "description": "Account locked" }
+        }
+      }
+    },
+    "/auth/admin/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Admin login",
+        "description": "Authenticate as system administrator.",
+        "operationId": "adminLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminLoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Admin login successful" },
+          "401": { "description": "Invalid admin credentials" }
+        }
+      }
+    },
+    "/auth/google": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Google OAuth login",
+        "description": "Authenticate with a Google ID token from Google Sign-In.",
+        "operationId": "googleLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GoogleAuthRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Google login successful" },
+          "401": { "description": "Invalid Google token" },
+          "501": { "description": "Google OAuth not configured" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout",
+        "description": "Invalidate user session.",
+        "operationId": "logout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LogoutRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Logged out successfully" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current user",
+        "description": "Retrieve the currently authenticated user's profile.",
+        "operationId": "getCurrentUser",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Current user profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserResponse" }
+              }
+            }
+          },
+          "401": { "description": "Not authenticated" }
+        }
+      }
+    },
+    "/phq8/questions": {
+      "get": {
+        "tags": ["Assessments"],
+        "summary": "Get PHQ-8 questions",
+        "description": "Retrieve the PHQ-8 questionnaire questions and answer options. Response is cacheable for 1 hour.",
+        "operationId": "getPhq8Questions",
+        "responses": {
+          "200": {
+            "description": "PHQ-8 questions and options",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Phq8QuestionsResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assessments": {
+      "post": {
+        "tags": ["Assessments"],
+        "summary": "Create assessment",
+        "description": "Submit a new PHQ-8 assessment with answers and optional audio recordings. If audio is attached, background ML inference is triggered.",
+        "operationId": "createAssessment",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAssessmentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Assessment created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssessmentResponse" }
+              }
+            }
+          },
+          "401": { "description": "Not authenticated" },
+          "403": { "description": "Not a patient" }
+        }
+      },
+      "get": {
+        "tags": ["Assessments"],
+        "summary": "List assessments",
+        "description": "List all assessments for the authenticated patient with pagination.",
+        "operationId": "listAssessments",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1, "minimum": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of assessments",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssessmentListResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assessments/latest": {
+      "get": {
+        "tags": ["Assessments"],
+        "summary": "Get latest assessment",
+        "description": "Retrieve the most recent assessment for the authenticated patient.",
+        "operationId": "getLatestAssessment",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Latest assessment with answers and ML results" },
+          "404": { "description": "No assessment found" }
+        }
+      }
+    },
+    "/assessments/{assessmentId}/processing-status": {
+      "get": {
+        "tags": ["Assessments"],
+        "summary": "Get processing status",
+        "description": "Check the ML processing status of an assessment.",
+        "operationId": "getProcessingStatus",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "assessmentId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Processing status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProcessingStatusResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assessments/{assessmentId}/ml-details": {
+      "get": {
+        "tags": ["Assessments"],
+        "summary": "Get ML details",
+        "description": "Retrieve extended ML prediction details including confidence intervals, audio quality, and behavioral features.",
+        "operationId": "getMlDetails",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "assessmentId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ML prediction details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MlDetailsResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/audio/upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Upload audio file",
+        "description": "Upload an audio recording to be associated with an assessment answer. Returns a `fileId` for use in assessment creation.",
+        "operationId": "uploadAudio",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Audio file (.wav, .mp3, .flac, .ogg, .m4a, .webm). Max 100 MB."
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "File uploaded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileUploadResponse" }
+              }
+            }
+          },
+          "413": { "description": "File too large" },
+          "422": { "description": "Unsupported file type" }
+        }
+      }
+    },
+    "/doctor/dashboard/summary": {
+      "get": {
+        "tags": ["Doctor Dashboard"],
+        "summary": "Doctor dashboard summary",
+        "description": "Aggregate statistics: total patients, assessments, high/low risk cases, severity breakdown.",
+        "operationId": "doctorSummary",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Dashboard summary data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DoctorSummaryResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not a doctor" }
+        }
+      }
+    },
+    "/doctor/dashboard/alerts": {
+      "get": {
+        "tags": ["Doctor Dashboard"],
+        "summary": "High-risk alerts",
+        "description": "Recent assessments flagged as Severe or Moderately Severe.",
+        "operationId": "doctorAlerts",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "severity", "in": "query", "schema": { "type": "array", "items": { "type": "string" } }, "description": "Filter by severity levels" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 12, "minimum": 1, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "List of high-risk alerts" }
+        }
+      }
+    },
+    "/doctor/dashboard/patient-trends": {
+      "get": {
+        "tags": ["Doctor Dashboard"],
+        "summary": "Patient trends",
+        "description": "Assessment score trends per patient over time.",
+        "operationId": "patientTrends",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "patientId", "in": "query", "schema": { "type": "string" }, "description": "Optional specific patient ID" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Patient trend data" }
+        }
+      }
+    },
+    "/admin/dashboard/snapshot": {
+      "get": {
+        "tags": ["Admin Dashboard"],
+        "summary": "System snapshot",
+        "description": "System-wide dashboard data including total users, doctors, patients, assessments, plus recent user and assessment lists.",
+        "operationId": "adminSnapshot",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Full system snapshot",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminSnapshotResponse" }
+              }
+            }
+          },
+          "403": { "description": "Not an admin" }
+        }
+      }
+    },
+    "/admin/dashboard/metrics": {
+      "get": {
+        "tags": ["Admin Dashboard"],
+        "summary": "Request metrics",
+        "description": "Aggregated request metrics over the last 24 hours in 5-minute buckets, plus ML severity distribution.",
+        "operationId": "adminMetrics",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Metrics timeline and ML stats" }
+        }
+      }
+    },
+    "/admin/dashboard/ml-health": {
+      "get": {
+        "tags": ["Admin Dashboard"],
+        "summary": "ML health check",
+        "description": "Check health status of both backend and ML model services.",
+        "operationId": "adminMlHealth",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Backend and ML model health status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MlHealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["ML Health"],
+        "summary": "Backend health check",
+        "description": "Simple health check for the backend service.",
+        "operationId": "backendHealth",
+        "responses": {
+          "200": {
+            "description": "Service healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "healthy" },
+                    "service": { "type": "string", "example": "mindscope-backend" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict": {
+      "post": {
+        "tags": ["ML Prediction"],
+        "summary": "Predict PHQ-8 from audio",
+        "description": "Upload a single audio file and receive a PHQ-8 depression severity prediction. Audio is preprocessed (VAD, chunking), features extracted (eGeMAPS + MFCC + text), and the model predicts a score (0-24). Rate limited to 30 requests/minute.",
+        "operationId": "predictSingle",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "name": "participant_id", "in": "query", "schema": { "type": "string", "default": "unknown" }, "description": "Optional participant identifier (1-64 chars)" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary", "description": "Audio file (wav, mp3, flac, ogg, m4a, webm)" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "PHQ-8 prediction result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PredictionResponse" }
+              }
+            }
+          },
+          "413": { "description": "File too large (max 100 MB)" },
+          "422": { "description": "Invalid file type or content" },
+          "429": { "description": "Rate limit exceeded" },
+          "503": { "description": "Model not loaded" }
+        }
+      }
+    },
+    "/predict/extended": {
+      "post": {
+        "tags": ["ML Prediction"],
+        "summary": "Extended prediction with confidence",
+        "description": "Extended prediction returning PHQ-8 score plus confidence intervals (MC Dropout), audio quality metrics, and behavioral features. Rate limited to 20 requests/minute.",
+        "operationId": "predictExtended",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "name": "participant_id", "in": "query", "schema": { "type": "string", "default": "unknown" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Extended prediction result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExtendedPredictionResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/predict/batch": {
+      "post": {
+        "tags": ["ML Prediction"],
+        "summary": "Batch prediction",
+        "description": "Upload multiple audio files (max 20) and receive PHQ-8 predictions for each. Failed files are reported but don't block others. Rate limited to 10 requests/minute.",
+        "operationId": "predictBatch",
+        "security": [{ "ApiKeyAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": { "type": "string", "format": "binary" },
+                    "description": "List of audio files (max 20)"
+                  }
+                },
+                "required": ["files"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch prediction results",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BatchPredictionResponse" }
+              }
+            }
+          },
+          "422": { "description": "Too many files" }
+        }
+      }
+    },
+    "/health (ML)": {
+      "get": {
+        "tags": ["ML Health"],
+        "summary": "ML model health check",
+        "description": "Check if the ML service is running and the model is loaded.",
+        "operationId": "mlHealth",
+        "responses": {
+          "200": {
+            "description": "ML service status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MLHealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT token obtained from `/api/v1/auth/login`"
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Optional API key for ML model (set via DEPRESSO_API_KEY env var)"
+      }
+    },
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["role", "name", "email", "password"],
+        "properties": {
+          "role": { "type": "string", "enum": ["patient", "doctor"], "description": "User role" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 6 },
+          "age": { "type": "integer", "description": "Patient only" },
+          "basicInfo": { "type": "string", "description": "Patient only" },
+          "specialization": { "type": "string", "description": "Doctor only" },
+          "licenseNumber": { "type": "string", "description": "Doctor only" },
+          "clinicName": { "type": "string", "description": "Doctor only" },
+          "yearsExperience": { "type": "integer", "description": "Doctor only" }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/UserObject" },
+          "requiresVerification": { "type": "boolean", "example": true },
+          "message": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresIn": { "type": "integer", "description": "Token TTL in seconds" },
+          "user": { "$ref": "#/components/schemas/UserObject" }
+        }
+      },
+      "AdminLoginRequest": {
+        "type": "object",
+        "required": ["adminId", "password"],
+        "properties": {
+          "adminId": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "GoogleAuthRequest": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": {
+          "credential": { "type": "string", "minLength": 1, "description": "Google ID token" }
+        }
+      },
+      "VerifyOtpRequest": {
+        "type": "object",
+        "required": ["email", "otp"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "otp": { "type": "string", "minLength": 6, "maxLength": 6 }
+        }
+      },
+      "ResendOtpRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "ForgotPasswordRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "ResetPasswordRequest": {
+        "type": "object",
+        "required": ["email", "otp", "newPassword"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "otp": { "type": "string", "minLength": 6, "maxLength": 6 },
+          "newPassword": { "type": "string", "minLength": 6 }
+        }
+      },
+      "LogoutRequest": {
+        "type": "object",
+        "properties": {
+          "refreshToken": { "type": "string" }
+        }
+      },
+      "UserObject": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string", "enum": ["patient", "doctor", "admin"] },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "isVerified": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "age": { "type": "integer" },
+          "basicInfo": { "type": "string" },
+          "specialization": { "type": "string" },
+          "licenseNumber": { "type": "string" },
+          "clinicName": { "type": "string" },
+          "yearsExperience": { "type": "integer" }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "properties": {
+          "user": { "$ref": "#/components/schemas/UserObject" }
+        }
+      },
+      "Phq8QuestionsResponse": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string", "example": "phq8_v1" },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer" },
+                "text": { "type": "string" },
+                "instruction": { "type": "string" }
+              }
+            }
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string" },
+                "value": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "AnswerInput": {
+        "type": "object",
+        "required": ["questionId", "score"],
+        "properties": {
+          "questionId": { "type": "integer", "minimum": 1, "maximum": 8 },
+          "score": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "durationSec": { "type": "number" },
+          "audioFileId": { "type": "string" }
+        }
+      },
+      "CreateAssessmentRequest": {
+        "type": "object",
+        "required": ["answers"],
+        "properties": {
+          "questionSetVersion": { "type": "string", "default": "phq8_v1" },
+          "answers": { "type": "array", "items": { "$ref": "#/components/schemas/AnswerInput" }, "minItems": 1, "maxItems": 8 },
+          "recordingCount": { "type": "integer", "default": 0, "minimum": 0 }
+        }
+      },
+      "AssessmentResponse": {
+        "type": "object",
+        "properties": {
+          "assessment": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "userId": { "type": "string" },
+              "score": { "type": "integer" },
+              "severity": { "type": "string", "enum": ["Minimal", "Mild", "Moderate", "Moderately Severe", "Severe"] },
+              "createdAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "AssessmentListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "score": { "type": "integer" },
+                "severity": { "type": "string" },
+                "recordingCount": { "type": "integer" },
+                "createdAt": { "type": "string", "format": "date-time" },
+                "mlScore": { "type": "number", "nullable": true },
+                "mlSeverity": { "type": "string", "nullable": true }
+              }
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "page": { "type": "integer" },
+              "pageSize": { "type": "integer" },
+              "total": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "ProcessingStatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["processing", "completed"] },
+          "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "stage": { "type": "string" }
+        }
+      },
+      "MlDetailsResponse": {
+        "type": "object",
+        "properties": {
+          "mlDetails": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "confidenceMean": { "type": "number" },
+              "confidenceStd": { "type": "number" },
+              "ciLower": { "type": "number" },
+              "ciUpper": { "type": "number" },
+              "audioQualityScore": { "type": "number" },
+              "audioSnrDb": { "type": "number" },
+              "audioSpeechProb": { "type": "number" },
+              "behavioral": { "type": "object" },
+              "inferenceTimeMs": { "type": "number" }
+            }
+          }
+        }
+      },
+      "FileUploadResponse": {
+        "type": "object",
+        "properties": {
+          "fileId": { "type": "string" },
+          "status": { "type": "string", "example": "available" },
+          "fileName": { "type": "string" },
+          "size": { "type": "integer", "description": "File size in bytes" }
+        }
+      },
+      "DoctorSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "type": "object",
+            "properties": {
+              "patients": { "type": "integer" },
+              "assessments": { "type": "integer" },
+              "highRiskCases": { "type": "integer" },
+              "lowRiskCases": { "type": "integer" }
+            }
+          },
+          "severityBreakdown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": { "type": "string" },
+                "count": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "AdminSnapshotResponse": {
+        "type": "object",
+        "properties": {
+          "totals": {
+            "type": "object",
+            "properties": {
+              "users": { "type": "integer" },
+              "doctors": { "type": "integer" },
+              "patients": { "type": "integer" },
+              "assessments": { "type": "integer" }
+            }
+          },
+          "users": { "type": "array", "items": { "$ref": "#/components/schemas/UserObject" } },
+          "assessments": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "MlHealthResponse": {
+        "type": "object",
+        "properties": {
+          "backend": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string" },
+              "latency_ms": { "type": "number" }
+            }
+          },
+          "mlModel": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string" },
+              "modelLoaded": { "type": "boolean" },
+              "device": { "type": "string" },
+              "latency_ms": { "type": "number" }
+            }
+          }
+        }
+      },
+      "PredictionResponse": {
+        "type": "object",
+        "properties": {
+          "participant_id": { "type": "string" },
+          "phq8_score": { "type": "number", "minimum": 0, "maximum": 24, "description": "Predicted PHQ-8 score" },
+          "severity": { "type": "string", "enum": ["Minimal", "Mild", "Moderate", "Moderately Severe", "Severe"] },
+          "num_chunks": { "type": "integer", "description": "Number of audio chunks processed" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ExtendedPredictionResponse": {
+        "type": "object",
+        "properties": {
+          "participant_id": { "type": "string" },
+          "phq8_score": { "type": "number", "minimum": 0, "maximum": 24 },
+          "severity": { "type": "string" },
+          "num_chunks": { "type": "integer" },
+          "inference_time_s": { "type": "number" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "confidence": {
+            "type": "object",
+            "properties": {
+              "mean": { "type": "number" },
+              "std": { "type": "number" },
+              "ci_lower": { "type": "number" },
+              "ci_upper": { "type": "number" }
+            }
+          },
+          "audio_quality": {
+            "type": "object",
+            "properties": {
+              "rms": { "type": "number" },
+              "snr_db": { "type": "number" },
+              "speech_prob": { "type": "number" },
+              "quality": { "type": "string" }
+            }
+          },
+          "behavioral": {
+            "type": "object",
+            "description": "Behavioral features extracted from audio"
+          }
+        }
+      },
+      "BatchPredictionResponse": {
+        "type": "object",
+        "properties": {
+          "predictions": { "type": "array", "items": { "$ref": "#/components/schemas/PredictionResponse" } },
+          "total": { "type": "integer" },
+          "failed": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "MLHealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["healthy", "starting"] },
+          "model_loaded": { "type": "boolean" },
+          "device": { "type": "string", "example": "cpu" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

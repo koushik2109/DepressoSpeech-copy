@@ -82,7 +82,11 @@ export default function SignIn() {
       if (session.user.role === "admin") {
         localStorage.setItem(
           "mindscope-admin-session",
-          JSON.stringify({ token: session.token, adminId: session.user.email, savedAt: Date.now() }),
+          JSON.stringify({
+            token: session.token,
+            adminId: session.user.email,
+            savedAt: Date.now(),
+          }),
         );
         navigate("/admin/dashboard");
         return;
@@ -109,7 +113,9 @@ export default function SignIn() {
         navigate("/admin/dashboard");
       } catch {
         // Show the original login error, not the admin fallback error
-        setErrors({ submit: loginError.message || "Invalid email or password" });
+        setErrors({
+          submit: loginError.message || "Invalid email or password",
+        });
       }
     } finally {
       setLoading(false);

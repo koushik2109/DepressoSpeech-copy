@@ -4,7 +4,11 @@ import Card from "../components/Card.jsx";
 import Button from "../components/Button.jsx";
 import VoiceRecorder from "../components/VoiceRecorder.jsx";
 import { buildQuestionSet, getSeverityLabel } from "../data/questionsData.js";
-import { getCurrentUser, saveAssessment, uploadAudio } from "../services/api.js";
+import {
+  getCurrentUser,
+  saveAssessment,
+  uploadAudio,
+} from "../services/api.js";
 
 export default function Assessment() {
   const navigate = useNavigate();
@@ -70,10 +74,15 @@ export default function Assessment() {
       setSubmitting(true);
       try {
         // Upload all audio recordings IN PARALLEL for lower total latency
-        const uploadEntries = Object.entries(recordings).filter(([, rec]) => rec.blob);
+        const uploadEntries = Object.entries(recordings).filter(
+          ([, rec]) => rec.blob,
+        );
         const uploadResults = await Promise.allSettled(
           uploadEntries.map(([qId, rec]) =>
-            uploadAudio(rec.blob, `q${qId}.webm`).then((res) => ({ qId, fileId: res.fileId })),
+            uploadAudio(rec.blob, `q${qId}.webm`).then((res) => ({
+              qId,
+              fileId: res.fileId,
+            })),
           ),
         );
         const audioFileIds = {};
@@ -221,7 +230,11 @@ export default function Assessment() {
                 onClick={handleNext}
                 disabled={!hasRecording || submitting}
               >
-                {submitting ? "Uploading..." : isLast ? "Submit Assessment" : "Next Question"}
+                {submitting
+                  ? "Uploading..."
+                  : isLast
+                    ? "Submit Assessment"
+                    : "Next Question"}
                 <svg
                   className="w-4 h-4"
                   fill="none"

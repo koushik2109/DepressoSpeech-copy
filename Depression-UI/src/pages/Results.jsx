@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
-  BarChart, Bar,
+  BarChart,
+  Bar,
   CartesianGrid,
   Line,
   LineChart,
@@ -9,8 +10,13 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  ComposedChart, ErrorBar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  ComposedChart,
+  ErrorBar,
 } from "recharts";
 import DepessionSpeedometer from "../components/DepessionSpeedometer.jsx";
 import ChartPanel from "../components/ChartPanel.jsx";
@@ -19,7 +25,11 @@ import {
   getSeverityLabel,
   PHQ8_OPTIONS,
 } from "../data/questionsData.js";
-import { getCurrentUser, listAssessments, getMLDetails } from "../services/api.js";
+import {
+  getCurrentUser,
+  listAssessments,
+  getMLDetails,
+} from "../services/api.js";
 
 const severityGuidance = {
   Minimal: {
@@ -94,7 +104,9 @@ export default function Results() {
   const user = getCurrentUser();
 
   useEffect(() => {
-    listAssessments().then(setAllAssessments).catch(() => setAllAssessments([]));
+    listAssessments()
+      .then(setAllAssessments)
+      .catch(() => setAllAssessments([]));
   }, []);
 
   useEffect(() => {
@@ -444,24 +456,45 @@ export default function Results() {
                 ML-Based Insights
               </h2>
               <p className="text-sm text-[#777] mt-1">
-                Results from analysing your voice recordings with our depression detection model.
+                Results from analysing your voice recordings with our depression
+                detection model.
               </p>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-6">
               {/* ML vs Self-Report Comparison */}
               <div className="results-section-card">
-                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">Score Comparison</h3>
-                <p className="text-xs text-[#777] mb-4">Self-report vs ML voice analysis</p>
+                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">
+                  Score Comparison
+                </h3>
+                <p className="text-xs text-[#777] mb-4">
+                  Self-report vs ML voice analysis
+                </p>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[
-                      { name: "Self-Report", value: score, fill: "#52B788" },
-                      { name: "ML Voice", value: mlDetails.confidenceMean ?? 0, fill: "#2D6A4F" },
-                    ]} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <BarChart
+                      data={[
+                        { name: "Self-Report", value: score, fill: "#52B788" },
+                        {
+                          name: "ML Voice",
+                          value: mlDetails.confidenceMean ?? 0,
+                          fill: "#2D6A4F",
+                        },
+                      ]}
+                      margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#EAF3EE" />
-                      <XAxis dataKey="name" tick={{ fill: "#777", fontSize: 11 }} tickLine={false} />
-                      <YAxis domain={[0, 24]} tick={{ fill: "#777", fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fill: "#777", fontSize: 11 }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        domain={[0, 24]}
+                        tick={{ fill: "#777", fontSize: 11 }}
+                        tickLine={false}
+                        axisLine={false}
+                      />
                       <Tooltip />
                       <Bar dataKey="value" radius={[6, 6, 0, 0]} />
                     </BarChart>
@@ -469,33 +502,73 @@ export default function Results() {
                 </div>
                 {mlDetails.confidenceStd > 0 && (
                   <p className="text-xs text-[#777] mt-2 text-center">
-                    ML confidence: ±{mlDetails.confidenceStd.toFixed(2)} (CI: {mlDetails.ciLower?.toFixed(1)}–{mlDetails.ciUpper?.toFixed(1)})
+                    ML confidence: ±{mlDetails.confidenceStd.toFixed(2)} (CI:{" "}
+                    {mlDetails.ciLower?.toFixed(1)}–
+                    {mlDetails.ciUpper?.toFixed(1)})
                   </p>
                 )}
               </div>
 
               {/* Behavioral Radar Chart */}
               <div className="results-section-card">
-                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">Behavioral Profile</h3>
-                <p className="text-xs text-[#777] mb-4">Voice features extracted from recordings</p>
+                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">
+                  Behavioral Profile
+                </h3>
+                <p className="text-xs text-[#777] mb-4">
+                  Voice features extracted from recordings
+                </p>
                 <div className="h-56">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart outerRadius={70} data={(() => {
-                      const b = mlDetails.behavioral || {};
-                      const norm = (v, max) => Math.min(100, (v / max) * 100);
-                      return [
-                        { feature: "Pitch", value: norm(b.f0_mean || 0, 300) },
-                        { feature: "Variation", value: norm(b.f0_std || 0, 80) },
-                        { feature: "Jitter", value: norm(b.jitter || 0, 0.05) },
-                        { feature: "Shimmer", value: norm(b.shimmer || 0, 0.2) },
-                        { feature: "Loudness", value: norm(b.loudness_mean || 0, 1) },
-                        { feature: "Duration", value: norm(b.total_duration || 0, 120) },
-                      ];
-                    })()}>
+                    <RadarChart
+                      outerRadius={70}
+                      data={(() => {
+                        const b = mlDetails.behavioral || {};
+                        const norm = (v, max) => Math.min(100, (v / max) * 100);
+                        return [
+                          {
+                            feature: "Pitch",
+                            value: norm(b.f0_mean || 0, 300),
+                          },
+                          {
+                            feature: "Variation",
+                            value: norm(b.f0_std || 0, 80),
+                          },
+                          {
+                            feature: "Jitter",
+                            value: norm(b.jitter || 0, 0.05),
+                          },
+                          {
+                            feature: "Shimmer",
+                            value: norm(b.shimmer || 0, 0.2),
+                          },
+                          {
+                            feature: "Loudness",
+                            value: norm(b.loudness_mean || 0, 1),
+                          },
+                          {
+                            feature: "Duration",
+                            value: norm(b.total_duration || 0, 120),
+                          },
+                        ];
+                      })()}
+                    >
                       <PolarGrid stroke="#E8E8E8" />
-                      <PolarAngleAxis dataKey="feature" tick={{ fill: "#777", fontSize: 10 }} />
-                      <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                      <Radar dataKey="value" stroke="#2D6A4F" fill="#52B788" fillOpacity={0.35} strokeWidth={2} />
+                      <PolarAngleAxis
+                        dataKey="feature"
+                        tick={{ fill: "#777", fontSize: 10 }}
+                      />
+                      <PolarRadiusAxis
+                        domain={[0, 100]}
+                        tick={false}
+                        axisLine={false}
+                      />
+                      <Radar
+                        dataKey="value"
+                        stroke="#2D6A4F"
+                        fill="#52B788"
+                        fillOpacity={0.35}
+                        strokeWidth={2}
+                      />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
@@ -503,21 +576,56 @@ export default function Results() {
 
               {/* Audio Quality */}
               <div className="results-section-card">
-                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">Audio Quality</h3>
-                <p className="text-xs text-[#777] mb-6">Recording clarity and signal quality</p>
+                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">
+                  Audio Quality
+                </h3>
+                <p className="text-xs text-[#777] mb-6">
+                  Recording clarity and signal quality
+                </p>
                 <div className="space-y-5">
                   {[
-                    { label: "Overall Quality", value: mlDetails.audioQualityScore, max: 1, color: mlDetails.audioQualityScore > 0.6 ? "#52B788" : mlDetails.audioQualityScore > 0.3 ? "#FBBF24" : "#EF4444" },
-                    { label: "SNR", value: Math.min(mlDetails.audioSnrDb || 0, 40) / 40, max: 1, suffix: `${(mlDetails.audioSnrDb || 0).toFixed(1)} dB`, color: "#2D6A4F" },
-                    { label: "Speech Detected", value: mlDetails.audioSpeechProb, max: 1, color: "#52B788" },
+                    {
+                      label: "Overall Quality",
+                      value: mlDetails.audioQualityScore,
+                      max: 1,
+                      color:
+                        mlDetails.audioQualityScore > 0.6
+                          ? "#52B788"
+                          : mlDetails.audioQualityScore > 0.3
+                            ? "#FBBF24"
+                            : "#EF4444",
+                    },
+                    {
+                      label: "SNR",
+                      value: Math.min(mlDetails.audioSnrDb || 0, 40) / 40,
+                      max: 1,
+                      suffix: `${(mlDetails.audioSnrDb || 0).toFixed(1)} dB`,
+                      color: "#2D6A4F",
+                    },
+                    {
+                      label: "Speech Detected",
+                      value: mlDetails.audioSpeechProb,
+                      max: 1,
+                      color: "#52B788",
+                    },
                   ].map((m) => (
                     <div key={m.label}>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-[#555] font-medium">{m.label}</span>
-                        <span className="text-[#777]">{m.suffix || `${((m.value || 0) * 100).toFixed(0)}%`}</span>
+                        <span className="text-[#555] font-medium">
+                          {m.label}
+                        </span>
+                        <span className="text-[#777]">
+                          {m.suffix || `${((m.value || 0) * 100).toFixed(0)}%`}
+                        </span>
                       </div>
                       <div className="h-2 bg-[#E8E8E8] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(m.value || 0) * 100}%`, backgroundColor: m.color }} />
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${(m.value || 0) * 100}%`,
+                            backgroundColor: m.color,
+                          }}
+                        />
                       </div>
                     </div>
                   ))}
@@ -525,7 +633,8 @@ export default function Results() {
 
                 {mlDetails.inferenceTimeMs && (
                   <p className="text-xs text-[#B5B5B5] mt-6">
-                    Analysis completed in {(mlDetails.inferenceTimeMs / 1000).toFixed(1)}s
+                    Analysis completed in{" "}
+                    {(mlDetails.inferenceTimeMs / 1000).toFixed(1)}s
                   </p>
                 )}
               </div>
@@ -537,9 +646,24 @@ export default function Results() {
         {!mlDetails && (assessment?.recordingCount || 0) > 0 && (
           <div className="mb-10 results-section-card text-center py-8">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FEF3C7] text-[#92400E] text-sm font-medium">
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <svg
+                className="w-4 h-4 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
               </svg>
               Voice analysis pending — results will appear here when ready
             </div>

@@ -7,17 +7,28 @@ venv/
 .venv/
 
 # Dataset (do not commit)
-# data/raw/
-# data/processed/
-# data/cached_features/
+data/raw/
+data/processed/
+data/cached_features/
 
 # Training outputs
-# checkpoints/
-# logs/
+checkpoints/
+logs/
 
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Backend
+backend/mindscope.db
+backend/uploads/
+
+# Frontend
+Depression-UI/node_modules/
+Depression-UI/dist/
+
+# IDE
+.vscode/
 
 # Env files
 .env

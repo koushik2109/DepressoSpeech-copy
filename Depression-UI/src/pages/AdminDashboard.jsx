@@ -810,9 +810,7 @@ export default function AdminDashboard() {
           )}
 
           {/* ========== MONITORING ========== */}
-          {activeTab === "monitoring" && (
-            <MonitoringTab t={t} />
-          )}
+          {activeTab === "monitoring" && <MonitoringTab t={t} />}
 
           {/* ========== SETTINGS ========== */}
           {activeTab === "settings" && (

@@ -1,12 +1,13 @@
 # =============================================================================
-# Session 9: Training Pipeline Configuration
-# Text-only features with statistics pooling — CCC > 0.5
+# Session 10: Optimized Training Configuration
+# 219 train subjects (merged train+dev), validated on 56 test subjects
+# Text-only SBERT with regularization fixes for reduced overfitting
 # =============================================================================
 
 # --- Data ---
 data:
-  train_csv: "data/splits/train_split.csv"
-  dev_csv: "data/splits/dev_split.csv"
+  train_csv: "data/splits/full_train.csv"
+  dev_csv: "data/splits/test_split.csv"
   label_column: "PHQ_Score"
   id_column: "Participant_ID"
   batch_size: 32
@@ -15,9 +16,8 @@ data:
   phq_threshold: 10
 
 # --- Model Architecture ---
-# SBERT text embeddings carry ~all depression signal (CCC=0.49 with Ridge).
-# Audio features (eGeMAPS/MFCC) add noise and hurt performance.
-# Mean+std pooling of text (768 dims) → Linear → best CCC.
+# SBERT text embeddings (384-dim) → stats pooling → small head
+# Keeping model simple to avoid overfitting on 219 subjects
 model:
   input_dim: 384
   feature_mode: "text_only"
@@ -25,7 +25,7 @@ model:
   stats_mode: "mean"
   stats_head_dim: 12
   head:
-    dropout: 0.50
+    dropout: 0.35
   mc_dropout: 0.15
   multitask: false
 
@@ -35,18 +35,17 @@ detailed_labels_csv: "data/labels/Detailed_PHQ8_Labels.csv"
 # --- Optimizer ---
 optimizer:
   type: "adamw"
-  lr: 2.5e-3
-  weight_decay: 0.05
+  lr: 2.0e-3
+  weight_decay: 0.15
 
 # --- Scheduler ---
 scheduler:
   type: "reduce_on_plateau"
   factor: 0.5
-  patience: 20
+  patience: 15
   min_lr: 1.0e-6
 
 # --- Loss ---
-# Combined loss: CCC + continuous-weighted MSE for direct metric optimization
 loss:
   type: "combined"
   phq_threshold: 10
@@ -60,28 +59,27 @@ loss:
   multitask_binary_weight: 0.05
 
 # --- Regularization ---
-# Disabled — entropy reg was 20% of normalized loss, distorting gradients
 regularization:
   entropy_lambda: 0.0
   gate_reg_lambda: 0.0
 
 # --- Augmentation ---
-# Disabled for stats_direct — augmentation corrupts feature statistics
+# Re-enabled with moderate values to combat overfitting
 augmentation:
   depression_threshold: 10.0
-  temporal_dropout_rate: 0.0
-  feature_noise_std: 0.0
-  label_noise_std: 0.0
+  temporal_dropout_rate: 0.10
+  feature_noise_std: 0.01
+  label_noise_std: 0.15
 
 # --- Training Loop ---
 training:
-  epochs: 3000
+  epochs: 2000
   gradient_clip_norm: 1.0
   seed: 42
 
 # --- Early Stopping ---
 early_stopping:
-  patience: 200
+  patience: 60
   min_delta: 0.001
   metric: "ccc"
 

@@ -13,6 +13,7 @@
 #   - Frontend: http://localhost:5173
 #   - Backend: http://localhost:8000
 #   - ML Model: http://localhost:8001
+#   - Swagger:  http://localhost:8080
 ################################################################################
 
 set -euo pipefail
@@ -29,10 +30,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$SCRIPT_DIR/Depression-UI"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 MODEL_DIR="$SCRIPT_DIR/Model"
+SWAGGER_DIR="$SCRIPT_DIR/swagger"
 
 FRONTEND_PORT=5173
 BACKEND_PORT=8000
 MODEL_PORT=8001
+SWAGGER_PORT=8080
 
 INSTALL_DEPS=true
 KILL_ONLY=false
@@ -233,6 +236,15 @@ start_model() {
     sleep 5
 }
 
+# Function to start swagger docs server
+start_swagger() {
+    print_header "Starting Swagger Documentation Server"
+    print_info "Swagger UI will run on: http://localhost:$SWAGGER_PORT"
+    (cd "$SWAGGER_DIR" && python3 "$SWAGGER_DIR/serve.py" --port $SWAGGER_PORT > /tmp/swagger.log 2>&1) &
+    SWAGGER_PID=$!
+    sleep 1
+}
+
 # Function to check service status (with retries for slow starters)
 check_service_status() {
     local service=$1
@@ -272,18 +284,24 @@ show_final_status() {
     check_service_status "ML Model" "$MODEL_PORT" "/tmp/model_serve.log" || true
 
     echo ""
+    echo -e "${BLUE}Swagger Documentation Server${NC}"
+    check_service_status "Swagger" "$SWAGGER_PORT" "/tmp/swagger.log" || true
+
+    echo ""
     print_header "Access Points"
     echo -e "${GREEN}Frontend:        ${NC}http://localhost:$FRONTEND_PORT"
     echo -e "${GREEN}Backend API:     ${NC}http://localhost:$BACKEND_PORT/api/v1"
     echo -e "${GREEN}Backend Docs:    ${NC}http://localhost:$BACKEND_PORT/docs"
     echo -e "${GREEN}Model API:       ${NC}http://localhost:$MODEL_PORT"
     echo -e "${GREEN}Model Docs:      ${NC}http://localhost:$MODEL_PORT/docs"
+    echo -e "${GREEN}Swagger UI:      ${NC}http://localhost:$SWAGGER_PORT"
 
     echo ""
     print_header "Log Files"
     echo -e "Frontend:  /tmp/frontend.log"
     echo -e "Backend:   /tmp/backend.log"
     echo -e "Model:     /tmp/model_serve.log"
+    echo -e "Swagger:   /tmp/swagger.log"
 
     echo ""
     echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}\n"
@@ -311,6 +329,7 @@ print_header "Checking and Clearing Ports"
 kill_port $FRONTEND_PORT || exit 1
 kill_port $BACKEND_PORT || exit 1
 kill_port $MODEL_PORT || exit 1
+kill_port $SWAGGER_PORT || exit 1
 
 # Exit if kill-only flag was set
 if [ "$KILL_ONLY" = true ]; then
@@ -340,12 +359,13 @@ print_header "Starting Services"
 start_frontend
 start_backend
 start_model
+start_swagger
 
 # Show status
 show_final_status
 
 # Keep script running to handle signals
-trap 'print_error "Shutting down..."; kill $FRONTEND_PID $BACKEND_PID $MODEL_PID 2>/dev/null; exit 0' INT TERM
+trap 'print_error "Shutting down..."; kill $FRONTEND_PID $BACKEND_PID $MODEL_PID $SWAGGER_PID 2>/dev/null; exit 0' INT TERM
 
 # Wait for all background processes
 wait

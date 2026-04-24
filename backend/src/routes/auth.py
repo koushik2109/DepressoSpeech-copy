@@ -1,5 +1,7 @@
 """Authentication routes: register, login, admin login, logout, me, OTP verification."""
 
+import secrets
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -17,11 +19,29 @@ from src.utils.auth import (
     decode_token,
 )
 from src.middleware.deps import get_current_user
-from src.services.email_service import generate_otp, send_otp_email
+from src.services.email_service import generate_otp, send_otp_email, send_otp_email_async
 from config.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+
+# ── OTP rate limiting (in-memory, resets on restart) ───
+_otp_attempts: dict = defaultdict(list)  # email -> [timestamps]
+MAX_OTP_ATTEMPTS = 5
+OTP_WINDOW_SECONDS = 600  # 10 minutes
+
+
+def _check_otp_rate_limit(email: str) -> None:
+    """Raise 429 if too many OTP attempts for this email."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=OTP_WINDOW_SECONDS)
+    _otp_attempts[email] = [t for t in _otp_attempts[email] if t > cutoff]
+    if len(_otp_attempts[email]) >= MAX_OTP_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Please wait {OTP_WINDOW_SECONDS // 60} minutes.",
+        )
+    _otp_attempts[email].append(now)
 
 
 # ── Schemas ────────────────────────────────────────────
@@ -109,8 +129,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.flush()
 
-    # Send OTP email (non-blocking failure — user can resend)
-    send_otp_email(to_email=user.email, otp=otp, user_name=user.name)
+    # Send OTP email asynchronously (non-blocking)
+    await send_otp_email_async(to_email=user.email, otp=otp, user_name=user.name)
 
     return {
         "user": _user_response(user),
@@ -123,6 +143,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/verify-otp")
 async def verify_otp(body: VerifyOtpRequest, db: AsyncSession = Depends(get_db)):
+    _check_otp_rate_limit(body.email.lower())
+
     result = await db.execute(select(User).where(User.email == body.email.lower()))
     user = result.scalar_one_or_none()
 
@@ -179,7 +201,7 @@ async def resend_otp(body: ResendOtpRequest, db: AsyncSession = Depends(get_db))
     user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
     await db.flush()
 
-    sent = send_otp_email(to_email=user.email, otp=otp, user_name=user.name)
+    sent = await send_otp_email_async(to_email=user.email, otp=otp, user_name=user.name)
     if not sent:
         raise HTTPException(status_code=500, detail="Failed to send OTP email. Please try again.")
 
@@ -205,7 +227,7 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
     user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
     await db.flush()
 
-    send_otp_email(to_email=user.email, otp=otp, user_name=user.name)
+    await send_otp_email_async(to_email=user.email, otp=otp, user_name=user.name)
 
     return {"success": True, "message": "If that email is registered, an OTP has been sent."}
 
@@ -265,7 +287,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/admin/login")
 async def admin_login(body: AdminLoginRequest, db: AsyncSession = Depends(get_db)):
     # Check against default admin account first
-    if body.adminId == settings.ADMIN_DEFAULT_EMAIL and body.password == settings.ADMIN_DEFAULT_PASSWORD:
+    if secrets.compare_digest(body.adminId, settings.ADMIN_DEFAULT_EMAIL) and secrets.compare_digest(body.password, settings.ADMIN_DEFAULT_PASSWORD):
         # Find or create admin user
         result = await db.execute(select(User).where(User.email == settings.ADMIN_DEFAULT_EMAIL))
         admin = result.scalar_one_or_none()

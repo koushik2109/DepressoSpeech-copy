@@ -1,5 +1,9 @@
-"""Email service for sending OTP verification emails."""
+"""Email service for sending OTP verification emails.
 
+Fixed: Uses asyncio.to_thread() for non-blocking SMTP operations.
+"""
+
+import asyncio
 import logging
 import smtplib
 import random
@@ -18,8 +22,24 @@ def generate_otp(length: int = 6) -> str:
     return "".join(random.choices(string.digits, k=length))
 
 
+def _send_smtp(to_email: str, msg: MIMEMultipart) -> bool:
+    """Synchronous SMTP send — called via asyncio.to_thread()."""
+    try:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.sendmail(settings.SMTP_USER, to_email, msg.as_string())
+        logger.info(f"[EMAIL] OTP email sent to {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"[EMAIL] Failed to send OTP to {to_email}: {e}")
+        return False
+
+
 def send_otp_email(to_email: str, otp: str, user_name: str = "User") -> bool:
-    """Send an OTP verification email.
+    """Send an OTP verification email (synchronous version for backward compat).
 
     Args:
         to_email: Recipient email address
@@ -34,10 +54,32 @@ def send_otp_email(to_email: str, otp: str, user_name: str = "User") -> bool:
             "[EMAIL] SMTP not configured — OTP email skipped. "
             "Set SMTP_USER and SMTP_PASSWORD in .env"
         )
-        # In dev mode, log the OTP so the developer can test
         logger.info(f"[EMAIL-DEV] OTP for {to_email}: {otp}")
-        return True  # Return True so registration still works in dev
+        return True
 
+    msg = _build_otp_message(to_email, otp, user_name)
+    return _send_smtp(to_email, msg)
+
+
+async def send_otp_email_async(to_email: str, otp: str, user_name: str = "User") -> bool:
+    """Send an OTP verification email without blocking the event loop.
+
+    Uses asyncio.to_thread() to run SMTP in a thread pool.
+    """
+    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+        logger.warning(
+            "[EMAIL] SMTP not configured — OTP email skipped. "
+            "Set SMTP_USER and SMTP_PASSWORD in .env"
+        )
+        logger.info(f"[EMAIL-DEV] OTP for {to_email}: {otp}")
+        return True
+
+    msg = _build_otp_message(to_email, otp, user_name)
+    return await asyncio.to_thread(_send_smtp, to_email, msg)
+
+
+def _build_otp_message(to_email: str, otp: str, user_name: str) -> MIMEMultipart:
+    """Build the OTP email message."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"MindScope — Your Verification Code: {otp}"
     msg["From"] = f"MindScope <{settings.SMTP_USER}>"
@@ -95,16 +137,4 @@ def send_otp_email(to_email: str, otp: str, user_name: str = "User") -> bool:
 
     msg.attach(MIMEText(text_body, "plain"))
     msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, to_email, msg.as_string())
-        logger.info(f"[EMAIL] OTP email sent to {to_email}")
-        return True
-    except Exception as e:
-        logger.error(f"[EMAIL] Failed to send OTP to {to_email}: {e}")
-        return False
+    return msg

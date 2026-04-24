@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DepressoSpeech – API Documentation</title>
+    <meta name="description" content="Interactive API documentation for the DepressoSpeech Depression Severity Prediction System">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css">
+    <style>
+        /* ═══════════════════════════════════════════════
+           CSS Variables — Design Tokens
+           ═══════════════════════════════════════════════ */
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4338ca;
+            --primary-light: #818cf8;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-surface: #1a2332;
+            --bg-hover: #263348;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-green: #22c55e;
+            --accent-blue: #3b82f6;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(255, 255, 255, 0.10);
+            --border-focus: rgba(99, 102, 241, 0.5);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.25);
+            --transition: 0.2s ease;
+        }
+
+        /* ═══════════════════════════════════════════════
+           Light Theme
+           ═══════════════════════════════════════════════ */
+        :root[data-theme="light"] {
+            --bg-dark: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-surface: #f1f5f9;
+            --bg-hover: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --accent-green: #16a34a;
+            --accent-blue: #2563eb;
+            --accent-orange: #d97706;
+            --accent-red: #dc2626;
+            --border-subtle: rgba(0, 0, 0, 0.06);
+            --border-light: rgba(0, 0, 0, 0.12);
+            --border-focus: rgba(99, 102, 241, 0.4);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        :root[data-theme="light"] .custom-header {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%) !important;
+            border-bottom-color: rgba(99, 102, 241, 0.15) !important;
+        }
+
+        :root[data-theme="light"] .header-title {
+            color: var(--text-primary) !important;
+        }
+
+        :root[data-theme="light"] .services-strip {
+            background: #ffffff !important;
+            border-bottom-color: var(--border-subtle) !important;
+        }
+
+        :root[data-theme="light"] .swagger-ui .opblock {
+            background: #ffffff !important;
+        }
+
+        :root[data-theme="light"] .swagger-ui .highlight-code,
+        :root[data-theme="light"] .swagger-ui .microlight {
+            background: #f1f5f9 !important;
+        }
+
+        :root[data-theme="light"] .swagger-ui .markdown code {
+            background: rgba(99, 102, 241, 0.08) !important;
+        }
+
+        :root[data-theme="light"] ::-webkit-scrollbar-track { background: #f8fafc; }
+        :root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.2); }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            border-radius: 9999px;
+            padding: 0.35rem 0.8rem;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--primary-light);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: all 0.2s ease;
+            font-family: var(--font-sans);
+            letter-spacing: 0.02em;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(99, 102, 241, 0.2);
+            transform: scale(1.05);
+        }
+
+        /* ═══════════════════════════════════════════════
+           Reset & Base
+           ═══════════════════════════════════════════════ */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            font-size: 15px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg-dark);
+            font-family: var(--font-sans);
+            color: var(--text-primary);
+            line-height: 1.65;
+            letter-spacing: 0.01em;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.5); }
+
+        /* ═══════════════════════════════════════════════
+           Custom Header
+           ═══════════════════════════════════════════════ */
+        .custom-header {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #131c2e 50%, #16213e 100%);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 1.4rem 2.5rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(16px);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1.5rem;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            font-size: 2.2rem;
+            filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.4));
+        }
+
+        .header-title {
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+        }
+
+        .header-title span {
+            background: linear-gradient(135deg, var(--primary), #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-subtitle {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            margin-top: 2px;
+            letter-spacing: 0.02em;
+        }
+
+        .header-badges {
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.3rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border: 1px solid;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        .badge-green  { background: rgba(34, 197, 94, 0.08); color: var(--accent-green);  border-color: rgba(34, 197, 94, 0.25); }
+        .badge-blue   { background: rgba(59, 130, 246, 0.08); color: var(--accent-blue);   border-color: rgba(59, 130, 246, 0.25); }
+        .badge-orange { background: rgba(245, 158, 11, 0.08); color: var(--accent-orange); border-color: rgba(245, 158, 11, 0.25); }
+
+        .badge-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .badge-dot-green  { background: var(--accent-green); }
+        .badge-dot-blue   { background: var(--accent-blue); }
+        .badge-dot-orange { background: var(--accent-orange); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        /* ═══════════════════════════════════════════════
+           Services Strip
+           ═══════════════════════════════════════════════ */
+        .services-strip {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0.7rem 2.5rem;
+        }
+
+        .services-grid {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            gap: 2.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .service-item {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
+        .service-port {
+            font-family: var(--font-mono);
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--primary-light);
+            padding: 0.15rem 0.55rem;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        /* ═══════════════════════════════════════════════
+           Swagger UI Container
+           ═══════════════════════════════════════════════ */
+        .swagger-ui {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 2.5rem 5rem;
+        }
+
+        /* Hide default topbar */
+        .swagger-ui .topbar { display: none !important; }
+
+        /* ─── Info Section ─── */
+        .swagger-ui .info {
+            margin: 1.5rem 0 2rem;
+        }
+
+        .swagger-ui .info .title {
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-size: 1.8rem !important;
+            font-weight: 700 !important;
+            letter-spacing: -0.02em !important;
+            line-height: 1.4 !important;
+        }
+
+        .swagger-ui .info p,
+        .swagger-ui .info li {
+            color: var(--text-secondary) !important;
+            font-size: 0.92rem !important;
+            line-height: 1.75 !important;
+            letter-spacing: 0.01em !important;
+        }
+
+        .swagger-ui .info a {
+            color: var(--primary-light) !important;
+            text-decoration: none !important;
+            transition: color var(--transition) !important;
+        }
+
+        .swagger-ui .info a:hover {
+            color: var(--primary) !important;
+            text-decoration: underline !important;
+        }
+
+        .swagger-ui .info .base-url {
+            font-family: var(--font-mono) !important;
+            font-size: 0.82rem !important;
+            color: var(--text-muted) !important;
+            letter-spacing: 0.03em !important;
+        }
+
+        /* ─── Scheme Container ─── */
+        .swagger-ui .scheme-container {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: var(--radius-lg) !important;
+            padding: 1.2rem 1.5rem !important;
+            box-shadow: var(--shadow-sm) !important;
+            margin-bottom: 1.5rem !important;
+        }
+
+        .swagger-ui .scheme-container label {
+            font-size: 0.82rem !important;
+            letter-spacing: 0.03em !important;
+        }
+
+        /* ─── Tag Groups ─── */
+        .swagger-ui .opblock-tag-section {
+            margin-bottom: 0.5rem !important;
+        }
+
+        .swagger-ui .opblock-tag {
+            color: var(--text-primary) !important;
+            border-bottom: 1px solid var(--border-subtle) !important;
+            font-family: var(--font-sans) !important;
+            font-size: 1.15rem !important;
+            font-weight: 600 !important;
+            letter-spacing: -0.01em !important;
+            padding: 1rem 1.2rem !important;
+            margin: 0 !important;
+            transition: background var(--transition) !important;
+        }
+
+        .swagger-ui .opblock-tag:hover {
+            background: rgba(99, 102, 241, 0.04) !important;
+        }
+
+        .swagger-ui .opblock-tag small {
+            color: var(--text-muted) !important;
+            font-size: 0.8rem !important;
+            font-weight: 400 !important;
+            line-height: 1.6 !important;
+            padding-left: 0.5rem !important;
+        }
+
+        /* ─── Operation Blocks ─── */
+        .swagger-ui .opblock {
+            border-radius: var(--radius-md) !important;
+            border: 1px solid var(--border-subtle) !important;
+            background: var(--bg-card) !important;
+            box-shadow: var(--shadow-sm) !important;
+            margin-bottom: 10px !important;
+            transition: box-shadow var(--transition), border-color var(--transition) !important;
+            overflow: hidden !important;
+        }
+
+        .swagger-ui .opblock:hover {
+            box-shadow: var(--shadow-md) !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary {
+            border-bottom: 1px solid var(--border-subtle) !important;
+            padding: 12px 16px !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary-method {
+            font-family: var(--font-mono) !important;
+            font-size: 0.75rem !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.06em !important;
+            padding: 6px 12px !important;
+            border-radius: var(--radius-sm) !important;
+            min-width: 68px !important;
+            text-align: center !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary-path {
+            color: var(--text-primary) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.88rem !important;
+            font-weight: 500 !important;
+            letter-spacing: 0.02em !important;
+            padding-left: 12px !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary-path__deprecated {
+            text-decoration: line-through !important;
+            opacity: 0.6 !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary-description {
+            color: var(--text-muted) !important;
+            font-size: 0.82rem !important;
+            line-height: 1.5 !important;
+            padding-left: 8px !important;
+        }
+
+        /* Method-specific colors */
+        .swagger-ui .opblock.opblock-get {
+            border-left: 3px solid rgba(34, 197, 94, 0.6) !important;
+        }
+        .swagger-ui .opblock.opblock-get .opblock-summary {
+            background: rgba(34, 197, 94, 0.04) !important;
+        }
+
+        .swagger-ui .opblock.opblock-post {
+            border-left: 3px solid rgba(59, 130, 246, 0.6) !important;
+        }
+        .swagger-ui .opblock.opblock-post .opblock-summary {
+            background: rgba(59, 130, 246, 0.04) !important;
+        }
+
+        .swagger-ui .opblock.opblock-put {
+            border-left: 3px solid rgba(245, 158, 11, 0.6) !important;
+        }
+        .swagger-ui .opblock.opblock-put .opblock-summary {
+            background: rgba(245, 158, 11, 0.04) !important;
+        }
+
+        .swagger-ui .opblock.opblock-delete {
+            border-left: 3px solid rgba(239, 68, 68, 0.6) !important;
+        }
+        .swagger-ui .opblock.opblock-delete .opblock-summary {
+            background: rgba(239, 68, 68, 0.04) !important;
+        }
+
+        .swagger-ui .opblock.opblock-patch {
+            border-left: 3px solid rgba(168, 85, 247, 0.6) !important;
+        }
+        .swagger-ui .opblock.opblock-patch .opblock-summary {
+            background: rgba(168, 85, 247, 0.04) !important;
+        }
+
+        /* ─── Operation Body ─── */
+        .swagger-ui .opblock-body {
+            background: var(--bg-surface) !important;
+            padding: 1rem !important;
+        }
+
+        .swagger-ui .opblock-body pre {
+            font-family: var(--font-mono) !important;
+            font-size: 0.82rem !important;
+            line-height: 1.7 !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        .swagger-ui .opblock-description-wrapper,
+        .swagger-ui .opblock-external-docs-wrapper {
+            padding: 10px 16px !important;
+        }
+
+        .swagger-ui .opblock-description-wrapper p,
+        .swagger-ui .opblock-description-wrapper h4 {
+            color: var(--text-secondary) !important;
+            font-size: 0.88rem !important;
+            line-height: 1.7 !important;
+        }
+
+        /* ─── Parameters Table ─── */
+        .swagger-ui table {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            width: 100% !important;
+        }
+
+        .swagger-ui table thead tr th,
+        .swagger-ui table thead tr td {
+            color: var(--text-secondary) !important;
+            font-family: var(--font-sans) !important;
+            font-size: 0.78rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.06em !important;
+            text-transform: uppercase !important;
+            padding: 10px 16px !important;
+            border-bottom: 1px solid var(--border-light) !important;
+        }
+
+        .swagger-ui table tbody tr td {
+            padding: 12px 16px !important;
+            border-bottom: 1px solid var(--border-subtle) !important;
+            vertical-align: top !important;
+        }
+
+        .swagger-ui .parameter__name {
+            color: var(--text-primary) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        .swagger-ui .parameter__name.required::after {
+            color: var(--accent-red) !important;
+            font-size: 0.75rem !important;
+        }
+
+        .swagger-ui .parameter__type {
+            color: var(--accent-blue) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.78rem !important;
+            font-weight: 500 !important;
+            letter-spacing: 0.03em !important;
+        }
+
+        .swagger-ui .parameter__in {
+            color: var(--text-muted) !important;
+            font-size: 0.72rem !important;
+            font-style: italic !important;
+        }
+
+        .swagger-ui .parameter__deprecated {
+            color: var(--accent-red) !important;
+        }
+
+        /* ─── Responses ─── */
+        .swagger-ui .responses-inner {
+            padding: 12px 0 !important;
+        }
+
+        .swagger-ui .responses-inner h4,
+        .swagger-ui .responses-inner h5 {
+            color: var(--text-primary) !important;
+            font-size: 0.9rem !important;
+            font-weight: 600 !important;
+            margin-bottom: 8px !important;
+            letter-spacing: 0.01em !important;
+        }
+
+        .swagger-ui .response-col_status {
+            color: var(--text-primary) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.85rem !important;
+            font-weight: 600 !important;
+            padding: 10px 16px !important;
+        }
+
+        .swagger-ui .response-col_description {
+            color: var(--text-secondary) !important;
+            font-size: 0.85rem !important;
+            line-height: 1.65 !important;
+            padding: 10px 16px !important;
+        }
+
+        .swagger-ui .response-col_links {
+            padding: 10px 16px !important;
+        }
+
+        /* ─── Tabs ─── */
+        .swagger-ui .tab li {
+            color: var(--text-secondary) !important;
+            font-size: 0.82rem !important;
+            font-weight: 500 !important;
+            padding: 8px 14px !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        .swagger-ui .tab li.active {
+            color: var(--text-primary) !important;
+        }
+
+        /* ─── Labels & Buttons ─── */
+        .swagger-ui label {
+            color: var(--text-secondary) !important;
+            font-size: 0.82rem !important;
+            font-weight: 500 !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        .swagger-ui .btn {
+            font-family: var(--font-sans) !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.03em !important;
+            border-radius: var(--radius-sm) !important;
+            padding: 8px 18px !important;
+            transition: all var(--transition) !important;
+        }
+
+        .swagger-ui .btn.execute {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+            border-radius: var(--radius-md) !important;
+            padding: 10px 24px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3) !important;
+        }
+
+        .swagger-ui .btn.execute:hover {
+            background: var(--primary-dark) !important;
+            box-shadow: 0 4px 10px rgba(99, 102, 241, 0.4) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        .swagger-ui .btn.cancel {
+            border-radius: var(--radius-md) !important;
+            padding: 10px 24px !important;
+        }
+
+        /* ─── Inputs ─── */
+        .swagger-ui select,
+        .swagger-ui input[type=text],
+        .swagger-ui input[type=password],
+        .swagger-ui input[type=search],
+        .swagger-ui input[type=email],
+        .swagger-ui input[type=file],
+        .swagger-ui textarea {
+            background: var(--bg-dark) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-light) !important;
+            border-radius: var(--radius-sm) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.85rem !important;
+            padding: 10px 14px !important;
+            line-height: 1.5 !important;
+            transition: border-color var(--transition) !important;
+        }
+
+        .swagger-ui select:focus,
+        .swagger-ui input[type=text]:focus,
+        .swagger-ui textarea:focus {
+            border-color: var(--border-focus) !important;
+            outline: none !important;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15) !important;
+        }
+
+        .swagger-ui textarea {
+            min-height: 100px !important;
+            line-height: 1.65 !important;
+        }
+
+        /* ─── Code / Highlight ─── */
+        .swagger-ui .highlight-code,
+        .swagger-ui .microlight {
+            background: var(--bg-dark) !important;
+            border-radius: var(--radius-md) !important;
+            padding: 16px 20px !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.82rem !important;
+            line-height: 1.7 !important;
+            letter-spacing: 0.03em !important;
+            border: 1px solid var(--border-subtle) !important;
+        }
+
+        .swagger-ui .copy-to-clipboard {
+            bottom: 10px !important;
+            right: 10px !important;
+        }
+
+        /* ─── Markdown Rendering ─── */
+        .swagger-ui .markdown p,
+        .swagger-ui .markdown li,
+        .swagger-ui .renderedMarkdown p,
+        .swagger-ui .renderedMarkdown li {
+            color: var(--text-secondary) !important;
+            font-size: 0.88rem !important;
+            line-height: 1.75 !important;
+            letter-spacing: 0.01em !important;
+            margin-bottom: 0.5em !important;
+        }
+
+        .swagger-ui .markdown h1,
+        .swagger-ui .markdown h2,
+        .swagger-ui .markdown h3,
+        .swagger-ui .markdown h4 {
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-weight: 600 !important;
+            margin-top: 1em !important;
+            margin-bottom: 0.5em !important;
+            letter-spacing: -0.01em !important;
+        }
+
+        .swagger-ui .markdown h1 { font-size: 1.5rem !important; }
+        .swagger-ui .markdown h2 { font-size: 1.25rem !important; }
+        .swagger-ui .markdown h3 { font-size: 1.1rem !important; }
+        .swagger-ui .markdown h4 { font-size: 1rem !important; }
+
+        .swagger-ui .markdown table {
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            border: 1px solid var(--border-light) !important;
+            border-radius: var(--radius-sm) !important;
+            overflow: hidden !important;
+            width: auto !important;
+            margin: 1em 0 !important;
+        }
+
+        .swagger-ui .markdown table th {
+            color: var(--text-primary) !important;
+            background: rgba(99, 102, 241, 0.08) !important;
+            font-weight: 600 !important;
+            font-size: 0.82rem !important;
+            letter-spacing: 0.04em !important;
+        }
+
+        .swagger-ui .markdown table td {
+            color: var(--text-secondary) !important;
+            font-size: 0.85rem !important;
+            line-height: 1.6 !important;
+        }
+
+        .swagger-ui .markdown table th,
+        .swagger-ui .markdown table td {
+            padding: 10px 18px !important;
+            border: 1px solid var(--border-subtle) !important;
+        }
+
+        .swagger-ui .markdown code {
+            font-family: var(--font-mono) !important;
+            background: rgba(99, 102, 241, 0.1) !important;
+            color: var(--primary-light) !important;
+            padding: 2px 6px !important;
+            border-radius: 4px !important;
+            font-size: 0.82rem !important;
+        }
+
+        /* ─── Info Section Tables ─── */
+        .swagger-ui .info .markdown table { width: auto !important; }
+        .swagger-ui .info .markdown table th,
+        .swagger-ui .info .markdown table td {
+            padding: 8px 18px !important;
+            border: 1px solid var(--border-light) !important;
+        }
+
+        /* ─── Models Section ─── */
+        .swagger-ui .model-box,
+        .swagger-ui .models {
+            background: var(--bg-card) !important;
+        }
+
+        .swagger-ui section.models {
+            border: 1px solid var(--border-subtle) !important;
+            border-radius: var(--radius-lg) !important;
+            overflow: hidden !important;
+        }
+
+        .swagger-ui section.models h4 {
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-size: 1.05rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.01em !important;
+            padding: 12px 16px !important;
+        }
+
+        .swagger-ui .model-title {
+            color: var(--text-primary) !important;
+            font-family: var(--font-sans) !important;
+            font-weight: 600 !important;
+            font-size: 0.92rem !important;
+        }
+
+        .swagger-ui .model {
+            color: var(--text-secondary) !important;
+            font-size: 0.85rem !important;
+            line-height: 1.65 !important;
+        }
+
+        .swagger-ui .model-toggle::after {
+            background: var(--text-secondary) !important;
+        }
+
+        .swagger-ui .prop-type {
+            color: var(--accent-blue) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.78rem !important;
+        }
+
+        .swagger-ui .prop-format {
+            color: var(--accent-orange) !important;
+            font-family: var(--font-mono) !important;
+            font-size: 0.72rem !important;
+        }
+
+        .swagger-ui span.model-title__text {
+            font-size: 0.88rem !important;
+            letter-spacing: 0.02em !important;
+        }
+
+        /* Model properties */
+        .swagger-ui table.model tbody tr td {
+            padding: 8px 14px !important;
+            line-height: 1.55 !important;
+        }
+
+        .swagger-ui table.model tbody tr td:first-child {
+            font-family: var(--font-mono) !important;
+            font-weight: 600 !important;
+            font-size: 0.82rem !important;
+            color: var(--text-primary) !important;
+        }
+
+        /* ─── Authorize Button ─── */
+        .swagger-ui .auth-wrapper .authorize {
+            border-color: var(--primary) !important;
+            color: var(--primary) !important;
+            border-radius: var(--radius-md) !important;
+            font-weight: 600 !important;
+            padding: 8px 18px !important;
+            transition: all var(--transition) !important;
+        }
+
+        .swagger-ui .auth-wrapper .authorize:hover {
+            background: rgba(99, 102, 241, 0.1) !important;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2) !important;
+        }
+
+        .swagger-ui .auth-wrapper .authorize svg { fill: var(--primary) !important; }
+
+        /* Authorization dialog */
+        .swagger-ui .dialog-ux .modal-ux {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-light) !important;
+            border-radius: var(--radius-lg) !important;
+            box-shadow: var(--shadow-lg) !important;
+        }
+
+        .swagger-ui .dialog-ux .modal-ux-header {
+            border-bottom: 1px solid var(--border-subtle) !important;
+            padding: 16px 20px !important;
+        }
+
+        .swagger-ui .dialog-ux .modal-ux-header h3 {
+            color: var(--text-primary) !important;
+            font-size: 1.1rem !important;
+            font-weight: 600 !important;
+        }
+
+        .swagger-ui .dialog-ux .modal-ux-content {
+            padding: 20px !important;
+        }
+
+        .swagger-ui .dialog-ux .modal-ux-content p {
+            color: var(--text-secondary) !important;
+            line-height: 1.7 !important;
+        }
+
+        /* ─── Filter Input ─── */
+        .swagger-ui .filter-container {
+            margin: 0 0 1rem !important;
+            padding: 0 !important;
+        }
+
+        .swagger-ui .filter-container .operation-filter-input {
+            border: 1px solid var(--border-light) !important;
+            border-radius: var(--radius-md) !important;
+            padding: 12px 18px !important;
+            font-size: 0.88rem !important;
+        }
+
+        /* ─── Try-it-out panels ─── */
+        .swagger-ui .try-out__btn {
+            font-size: 0.78rem !important;
+            padding: 6px 14px !important;
+            border-radius: var(--radius-sm) !important;
+        }
+
+        /* ─── Loading animation ─── */
+        .swagger-ui .loading-container .loading::after {
+            color: var(--primary) !important;
+        }
+
+        /* ─── Arrow / expand icons ─── */
+        .swagger-ui .expand-operation svg,
+        .swagger-ui .expand-methods svg {
+            fill: var(--text-muted) !important;
+            transition: fill var(--transition) !important;
+        }
+
+        .swagger-ui .expand-operation:hover svg,
+        .swagger-ui .expand-methods:hover svg {
+            fill: var(--text-primary) !important;
+        }
+
+        /* ═══════════════════════════════════════════════
+           Responsive Overrides
+           ═══════════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            .custom-header {
+                padding: 1rem 1.2rem;
+            }
+            .header-content {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+            }
+            .services-strip {
+                padding: 0.6rem 1.2rem;
+            }
+            .services-grid {
+                gap: 1rem;
+                justify-content: flex-start;
+            }
+            .swagger-ui {
+                padding: 1rem 1rem 3rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            html { font-size: 14px; }
+            .header-badges { gap: 0.4rem; }
+            .badge { padding: 0.25rem 0.55rem; font-size: 0.68rem; }
+        }
+    </style>
+</head>
+<body>
+    <header class="custom-header">
+        <div class="header-content">
+            <div class="header-left">
+                <span class="logo-icon">🧠</span>
+                <div>
+                    <div class="header-title"><span>DepressoSpeech</span> API</div>
+                    <div class="header-subtitle">Depression Severity Prediction System – Unified Documentation</div>
+                </div>
+            </div>
+            <div class="header-badges">
+                <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
+                    <span id="theme-icon">☀️</span>
+                    <span id="theme-label">Light</span>
+                </button>
+                <span class="badge badge-green">
+                    <span class="badge-dot badge-dot-green"></span>
+                    v2.0.0
+                </span>
+                <span class="badge badge-blue">
+                    <span class="badge-dot badge-dot-blue"></span>
+                    OpenAPI 3.0
+                </span>
+                <span class="badge badge-orange">
+                    <span class="badge-dot badge-dot-orange"></span>
+                    3 Services
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <div class="services-strip">
+        <div class="services-grid">
+            <div class="service-item">
+                🖥️ Frontend
+                <span class="service-port">:5173</span>
+            </div>
+            <div class="service-item">
+                ⚙️ Backend API
+                <span class="service-port">:8000</span>
+            </div>
+            <div class="service-item">
+                🤖 ML Model API
+                <span class="service-port">:8001</span>
+            </div>
+            <div class="service-item">
+                📖 Swagger Docs
+                <span class="service-port">:8080</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-standalone-preset.js"></script>
+    <script>
+        // Theme toggle
+        function toggleTheme() {
+            const root = document.documentElement;
+            const current = root.getAttribute('data-theme');
+            const next = current === 'light' ? 'dark' : 'light';
+            root.setAttribute('data-theme', next);
+            localStorage.setItem('swagger-theme', next);
+            updateToggleUI(next);
+        }
+
+        function updateToggleUI(theme) {
+            const icon = document.getElementById('theme-icon');
+            const label = document.getElementById('theme-label');
+            if (theme === 'light') {
+                icon.textContent = '🌙';
+                label.textContent = 'Dark';
+            } else {
+                icon.textContent = '☀️';
+                label.textContent = 'Light';
+            }
+        }
+
+        // Restore saved theme
+        (function() {
+            const saved = localStorage.getItem('swagger-theme');
+            if (saved) {
+                document.documentElement.setAttribute('data-theme', saved);
+                updateToggleUI(saved);
+            }
+        })();
+
+        // Swagger UI init
+        window.onload = () => {
+            SwaggerUIBundle({
+                url: "./openapi.json",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 2,
+                docExpansion: "list",
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true,
+                syntaxHighlight: {
+                    activated: true,
+                    theme: "monokai"
+                },
+            });
+        };
+    </script>
+</body>
+</html>

@@ -1,10 +1,11 @@
 """MindScope Backend – FastAPI application factory."""
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -22,7 +23,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database...")
     await init_db()
     Path(settings.STORAGE_LOCAL_PATH).mkdir(parents=True, exist_ok=True)
-    logger.info("MindScope backend ready")
+    logger.info("MindScope backend ready — listening on port %s", settings.APP_PORT)
     yield
     logger.info("Shutting down...")
 
@@ -35,8 +36,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # GZip — compress JSON responses over 1KB for faster transfer
-    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    # GZip — compress JSON responses over 500 bytes for faster transfer
+    app.add_middleware(GZipMiddleware, minimum_size=500)
 
     # CORS
     app.add_middleware(
@@ -47,7 +48,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Request metrics
+    # Request metrics (now batched — no per-request DB write)
     from src.middleware.metrics import MetricsMiddleware
     app.add_middleware(MetricsMiddleware)
 

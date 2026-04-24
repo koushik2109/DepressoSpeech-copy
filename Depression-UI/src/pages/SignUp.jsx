@@ -201,14 +201,26 @@ export default function SignUp() {
                   }`}
                 >
                   {step >= 2 ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M4.5 12.75l6 6 9-13.5"
+                      />
                     </svg>
                   ) : (
                     "1"
                   )}
                 </div>
-                <span className={`mt-2.5 text-xs font-semibold tracking-wide uppercase transition-colors ${step >= 1 ? "text-[#2D6A4F]" : "text-[#B5B5B5]"}`}>
+                <span
+                  className={`mt-2.5 text-xs font-semibold tracking-wide uppercase transition-colors ${step >= 1 ? "text-[#2D6A4F]" : "text-[#B5B5B5]"}`}
+                >
                   Choose Role
                 </span>
               </div>
@@ -233,7 +245,9 @@ export default function SignUp() {
                 >
                   2
                 </div>
-                <span className={`mt-2.5 text-xs font-semibold tracking-wide uppercase transition-colors ${step >= 2 ? "text-[#2D6A4F]" : "text-[#B5B5B5]"}`}>
+                <span
+                  className={`mt-2.5 text-xs font-semibold tracking-wide uppercase transition-colors ${step >= 2 ? "text-[#2D6A4F]" : "text-[#B5B5B5]"}`}
+                >
                   Your Details
                 </span>
               </div>
@@ -243,7 +257,11 @@ export default function SignUp() {
           {/* Header text */}
           <div className="text-center">
             <h1 className="text-4xl lg:text-5xl font-bold text-[#1B1B1B] tracking-tight">
-              {step === 1 ? "How would you like to use MindScope?" : role === "doctor" ? "Set up your doctor profile" : "Tell us a bit about yourself"}
+              {step === 1
+                ? "How would you like to use MindScope?"
+                : role === "doctor"
+                  ? "Set up your doctor profile"
+                  : "Tell us a bit about yourself"}
             </h1>
             <p className="mt-4 text-lg text-[#777] max-w-2xl mx-auto">
               {step === 1

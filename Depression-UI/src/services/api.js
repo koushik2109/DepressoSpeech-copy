@@ -1,5 +1,39 @@
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = "/api/v1";
 const SESSION_KEY = "mindscope-session";
+
+// ── Lightweight in-memory response cache ────────────────
+// Prevents duplicate network calls when components re-mount rapidly.
+const _cache = new Map();
+const CACHE_TTL_MS = 15_000; // 15 seconds
+
+function getCached(key) {
+  const entry = _cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    _cache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key, data) {
+  _cache.set(key, { data, ts: Date.now() });
+}
+
+/** Invalidate cache entries whose key starts with `prefix`. */
+export function invalidateCache(prefix = "") {
+  if (!prefix) {
+    _cache.clear();
+    return;
+  }
+  for (const k of _cache.keys()) {
+    if (k.startsWith(prefix)) _cache.delete(k);
+  }
+}
+
+// ── In-flight dedup ─────────────────────────────────────
+// If the same GET request is already in flight, return the existing promise.
+const _inflight = new Map();
 
 // ── HTTP helper ─────────────────────────────────────────
 
@@ -7,7 +41,6 @@ async function apiFetch(path, options = {}) {
   const session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
   const headers = {
     "Content-Type": "application/json",
-    "Accept-Encoding": "gzip",
     ...options.headers,
   };
   if (session?.token) {
@@ -20,13 +53,42 @@ async function apiFetch(path, options = {}) {
     headers["Authorization"] = `Bearer ${adminSession.token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const method = (options.method || "GET").toUpperCase();
+  const cacheKey = `${method}:${path}`;
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed (${res.status})`);
+  // For GET requests: use cache + dedup
+  if (method === "GET") {
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+
+    if (_inflight.has(cacheKey)) return _inflight.get(cacheKey);
   }
-  return res.json();
+
+  const fetchPromise = (async () => {
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Request failed (${res.status})`);
+    }
+    return res.json();
+  })();
+
+  if (method === "GET") {
+    _inflight.set(cacheKey, fetchPromise);
+    try {
+      const data = await fetchPromise;
+      setCache(cacheKey, data);
+      return data;
+    } finally {
+      _inflight.delete(cacheKey);
+    }
+  }
+
+  // Non-GET: invalidate related caches
+  const data = await fetchPromise;
+  // After mutations, clear all cached GETs so the UI picks up new data
+  _cache.clear();
+  return data;
 }
 
 // ── Auth ────────────────────────────────────────────────
@@ -163,6 +225,7 @@ export function getAdminSession() {
 export function logoutUser() {
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem("mindscope-admin-session");
+  _cache.clear();
 }
 
 // ── Assessments ─────────────────────────────────────────
@@ -199,6 +262,7 @@ export async function saveAssessment(assessment) {
 
 export async function listAssessments() {
   const data = await apiFetch("/assessments?page=1&pageSize=100");
+  const user = getCurrentUser();
   // Map to the shape the frontend expects
   return (data.items || []).map((a) => ({
     id: a.id,
@@ -206,10 +270,10 @@ export async function listAssessments() {
     severity: a.severity,
     recordingCount: a.recordingCount,
     createdAt: a.createdAt,
-    userId: getCurrentUser()?.id,
-    userName: getCurrentUser()?.name,
-    email: getCurrentUser()?.email,
-    role: getCurrentUser()?.role,
+    userId: user?.id,
+    userName: user?.name,
+    email: user?.email,
+    role: user?.role,
     mlScore: a.mlScore,
     mlSeverity: a.mlSeverity,
   }));
@@ -238,11 +302,12 @@ export async function getDashboardSnapshot() {
 
   if (session?.user?.role === "doctor") {
     try {
-      const summary = await apiFetch("/doctor/dashboard/summary");
-      const trends = await apiFetch(
-        "/doctor/dashboard/patient-trends?limit=50",
-      );
-      const alerts = await apiFetch("/doctor/dashboard/alerts?limit=12");
+      // Fetch all three in parallel for lower latency
+      const [summary, trends, alerts] = await Promise.all([
+        apiFetch("/doctor/dashboard/summary"),
+        apiFetch("/doctor/dashboard/patient-trends?limit=50"),
+        apiFetch("/doctor/dashboard/alerts?limit=12"),
+      ]);
 
       // Build the snapshot shape the frontend expects
       const assessments = [];
