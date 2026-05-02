@@ -52,6 +52,7 @@
       -apple-system,
       BlinkMacSystemFont,
       sans-serif;
+    font-size: 16.5px;
     background-color: var(--color-cream);
     color: var(--color-charcoal);
     -webkit-font-smoothing: antialiased;
@@ -298,7 +299,7 @@
 }
 
 .landing-section-label {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -308,7 +309,7 @@
 
 .landing-section-title {
   font-family: "Inter", sans-serif;
-  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
   font-weight: 700;
   color: var(--color-charcoal);
 }
@@ -340,7 +341,7 @@
 }
 
 .landing-step-label {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -349,14 +350,14 @@
 }
 
 .landing-step-title {
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 600;
   color: var(--color-charcoal);
   margin-bottom: 12px;
 }
 
 .landing-step-desc {
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: var(--color-gray-mid);
   line-height: 1.6;
   max-width: 24rem;
@@ -402,7 +403,7 @@
 }
 
 .landing-faq-question {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 600;
   color: var(--color-charcoal);
   padding-right: 16px;
@@ -434,7 +435,7 @@
 }
 
 .landing-faq-answer-text {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--color-gray-mid);
   line-height: 1.75;
   padding-bottom: 24px;
@@ -576,7 +577,7 @@
 
 .results-page-title {
   font-family: "Playfair Display", Georgia, serif;
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
   font-weight: 400;
   color: var(--color-charcoal);
   line-height: 1.15;
@@ -618,7 +619,7 @@
 
 .results-section-heading {
   font-family: "Inter", sans-serif;
-  font-size: 1.3rem;
+  font-size: 1.45rem;
   font-weight: 700;
   color: var(--color-charcoal);
   margin-bottom: 8px;
@@ -648,7 +649,7 @@
   background-color: var(--color-charcoal);
   color: var(--color-white);
   font-family: "Inter", sans-serif;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -669,7 +670,7 @@
   background: transparent;
   color: var(--color-charcoal);
   font-family: "Inter", sans-serif;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);

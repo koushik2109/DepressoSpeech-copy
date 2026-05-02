@@ -28,7 +28,18 @@ class MLClient:
                     files={"file": (filename, f, "application/octet-stream")},
                     params={"participant_id": participant_id},
                 )
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                detail = None
+                try:
+                    detail = resp.json().get("detail")
+                except Exception:
+                    detail = resp.text
+                message = detail or str(exc)
+                raise RuntimeError(
+                    f"Model API error ({resp.status_code}): {message}"
+                ) from exc
             return resp.json()
 
     async def health_check(self) -> dict:

@@ -3,7 +3,12 @@ import { useNavigate, Link } from "react-router-dom";
 import Card from "../components/Card.jsx";
 import Input from "../components/Input.jsx";
 import Button from "../components/Button.jsx";
-import { loginUser, loginAdmin, googleLogin } from "../services/api.js";
+import {
+  loginUser,
+  loginAdmin,
+  googleLogin,
+  createAdminSessionFromUser,
+} from "../services/api.js";
 
 export default function SignIn() {
   const navigate = useNavigate();
@@ -80,14 +85,7 @@ export default function SignIn() {
 
       // Admin user — also store admin session so route guard works
       if (session.user.role === "admin") {
-        localStorage.setItem(
-          "mindscope-admin-session",
-          JSON.stringify({
-            token: session.token,
-            adminId: session.user.email,
-            savedAt: Date.now(),
-          }),
-        );
+        createAdminSessionFromUser(session);
         navigate("/admin/dashboard");
         return;
       }

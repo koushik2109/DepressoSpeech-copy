@@ -1,0 +1,272 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
+import Button from "../components/Button.jsx";
+import Card from "../components/Card.jsx";
+import Input from "../components/Input.jsx";
+import {
+  assignDoctor,
+  getCurrentUser,
+  listPatientAssignments,
+  listDoctors,
+} from "../services/api.js";
+
+function readLatestAssessmentId() {
+  try {
+    return JSON.parse(sessionStorage.getItem("latestAssessment") || "{}")?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+export default function DoctorMarketplace() {
+  const user = getCurrentUser();
+  const [filters, setFilters] = useState({
+    minFee: "",
+    maxFee: "",
+    availability: "available",
+  });
+  const [doctors, setDoctors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [assigningId, setAssigningId] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [assignments, setAssignments] = useState([]);
+  const assessmentId = useMemo(() => readLatestAssessmentId(), []);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+
+    listDoctors({
+      minFee: filters.minFee,
+      maxFee: filters.maxFee,
+      isAvailable:
+        filters.availability === "all"
+          ? null
+          : filters.availability === "available",
+    })
+      .then((items) => {
+        if (!active) return;
+        setDoctors([...items].sort((a, b) => Number(a.fee) - Number(b.fee)));
+      })
+      .catch((err) => active && setError(err.message || "Unable to load doctors."))
+      .finally(() => active && setLoading(false));
+
+    return () => {
+      active = false;
+    };
+  }, [filters]);
+
+  useEffect(() => {
+    listPatientAssignments()
+      .then(setAssignments)
+      .catch(() => setAssignments([]));
+  }, []);
+
+  if (!user || user.role !== "patient") {
+    return <Navigate to="/login" replace />;
+  }
+
+  const updateFilter = (field) => (event) => {
+    setFilters((previous) => ({ ...previous, [field]: event.target.value }));
+    setMessage("");
+  };
+
+  const handleAssign = async ({ doctorId = null, autoAssign = false }) => {
+    setAssigningId(autoAssign ? "auto" : doctorId);
+    setError("");
+    setMessage("");
+    try {
+      const assignment = await assignDoctor({
+        doctorId,
+        autoAssign,
+        assessmentId,
+      });
+      setMessage(`Request sent to Dr. ${assignment.doctor.name}. Contact details are emailed after acceptance.`);
+      listPatientAssignments()
+        .then(setAssignments)
+        .catch(() => setAssignments([]));
+    } catch (err) {
+      setError(err.message || "Unable to assign doctor.");
+    } finally {
+      setAssigningId("");
+    }
+  };
+
+  return (
+    <div className="pt-24 lg:pt-28 min-h-screen bg-[#F7F7F2] px-4 py-10">
+      <div className="mx-auto max-w-[88rem] space-y-8">
+        <section className="rounded-3xl border border-[#D6E3DA] bg-gradient-to-br from-[#F3FBF7] via-white to-[#EEF7F2] px-6 py-8 md:px-10">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] font-semibold text-[#52B788]">
+                Doctor Marketplace
+              </p>
+              <h1 className="mt-3 text-3xl font-bold text-[#1B1B1B] md:text-4xl">
+                Choose a Doctor
+              </h1>
+              <p className="mt-2 max-w-2xl text-[#5F6B65]">
+                Browse available doctors with complete contact profiles and assign one for follow-up.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                variant="secondary"
+                onClick={() => handleAssign({ autoAssign: true })}
+                disabled={assigningId === "auto" || loading}
+              >
+                {assigningId === "auto" ? "Assigning..." : "Auto Assign Lowest Fee"}
+              </Button>
+              <Link to="/assessment-history">
+                <Button variant="outline">History</Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <Card className="p-5 md:p-6">
+          <div className="grid gap-4 md:grid-cols-[1fr_1fr_220px] md:items-end">
+            <Input
+              label="Minimum Fee"
+              id="minFee"
+              type="number"
+              placeholder="0"
+              value={filters.minFee}
+              onChange={updateFilter("minFee")}
+            />
+            <Input
+              label="Maximum Fee"
+              id="maxFee"
+              type="number"
+              placeholder="500"
+              value={filters.maxFee}
+              onChange={updateFilter("maxFee")}
+            />
+            <div className="space-y-1.5">
+              <label
+                htmlFor="availability"
+                className="block text-sm font-semibold text-[#1B1B1B]/80"
+              >
+                Availability
+              </label>
+              <select
+                id="availability"
+                value={filters.availability}
+                onChange={updateFilter("availability")}
+                className="w-full rounded-xl border border-[#E8E8E8] bg-white/70 px-4 py-3.5 text-sm font-medium text-[#1B1B1B] outline-none transition-colors focus:border-[#2D6A4F] focus:ring-2 focus:ring-[#2D6A4F]/30"
+              >
+                <option value="available">Available only</option>
+                <option value="all">All doctors</option>
+              </select>
+            </div>
+          </div>
+        </Card>
+
+        {(message || error) && (
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+              error
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {error || message}
+          </div>
+        )}
+
+        {assignments.length > 0 && (
+          <Card className="p-5 md:p-6">
+            <h2 className="text-xl font-bold text-[#1B1B1B]">Your Doctor Requests</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {assignments.slice(0, 6).map((assignment) => (
+                <div key={assignment.id} className="rounded-xl border border-[#E8E8E8] bg-[#FAFAF7] px-4 py-3">
+                  <p className="font-bold text-[#1B1B1B]">
+                    Dr. {assignment.doctor?.name || "Doctor"}
+                  </p>
+                  <p className="text-sm text-[#6A766F]">
+                    Status: <span className="font-bold capitalize">{assignment.status}</span>
+                  </p>
+                  {assignment.status === "accepted" && (
+                    <p className="mt-1 text-xs text-[#2D6A4F]">
+                      {assignment.doctor?.email} · {assignment.doctor?.phone}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {loading ? (
+          <Card className="p-8 text-center text-[#6A766F]">Loading doctors...</Card>
+        ) : doctors.length === 0 ? (
+          <Card className="p-8 text-center">
+            <p className="text-lg font-bold text-[#1B1B1B]">No matching doctors</p>
+            <p className="mt-1 text-sm text-[#6A766F]">
+              Adjust the fee range or availability filter.
+            </p>
+          </Card>
+        ) : (
+          <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {doctors.map((doctor) => (
+              <Card key={doctor.id} className="flex h-full flex-col gap-5 p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#52B788]">
+                      Doctor
+                    </p>
+                    <h2 className="mt-2 text-2xl font-bold text-[#1B1B1B]">
+                      Dr. {doctor.name}
+                    </h2>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      doctor.isAvailable
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {doctor.isAvailable ? "Available" : "Unavailable"}
+                  </span>
+                </div>
+
+                <div className="grid gap-3 text-sm text-[#4C5852]">
+                  <p>
+                    <span className="font-semibold text-[#1B1B1B]">Fee:</span>{" "}
+                    {Number(doctor.fee).toLocaleString("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      maximumFractionDigits: 0,
+                    })}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#1B1B1B]">Email:</span>{" "}
+                    {doctor.email}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#1B1B1B]">Phone:</span>{" "}
+                    {doctor.phone}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleAssign({ doctorId: doctor.id })}
+                  disabled={!doctor.isAvailable || assigningId === doctor.id}
+                  className={`mt-auto min-h-12 rounded-xl px-5 py-3 text-sm font-bold transition-colors ${
+                    doctor.isAvailable
+                      ? "bg-[#1B3A2D] text-white hover:bg-[#2D6A4F]"
+                      : "cursor-not-allowed bg-[#E8E8E8] text-[#9AA49F]"
+                  }`}
+                >
+                  {assigningId === doctor.id ? "Assigning..." : "Select Doctor"}
+                </button>
+              </Card>
+            ))}
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}

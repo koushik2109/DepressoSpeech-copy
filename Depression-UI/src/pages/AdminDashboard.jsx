@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { getDashboardSnapshot, getAdminSession } from "../services/api.js";
+import {
+  getDashboardSnapshot,
+  getAdminSession,
+  logoutUser,
+} from "../services/api.js";
 import MonitoringTab from "../components/MonitoringTab.jsx";
 
 const TAB_ICONS = {
@@ -184,7 +188,7 @@ export default function AdminDashboard() {
   }
 
   const handleSignOut = () => {
-    localStorage.removeItem("mindscope-admin-session");
+    logoutUser();
     navigate("/");
   };
 

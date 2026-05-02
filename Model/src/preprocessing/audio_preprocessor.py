@@ -137,11 +137,20 @@ class AudioPreprocessor:
 
         # [VALIDATION_CHECK] Ensure float32
         audio = audio.astype(np.float32)
+        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
+        peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+        if peak > 0:
+            audio = audio / peak
+
+        rms = float(np.sqrt(np.mean(np.square(audio)))) if audio.size else 0.0
+        min_amp = float(audio.min()) if audio.size else 0.0
+        max_amp = float(audio.max()) if audio.size else 0.0
 
         # [DEBUG_POINT] Log audio stats
-        logger.debug(
+        logger.info(
             f"Loaded {audio_path}: duration={len(audio)/sr:.2f}s, "
-            f"sr={sr}, min={audio.min():.4f}, max={audio.max():.4f}"
+            f"sr={sr}, waveform_len={len(audio)}, min={min_amp:.4f}, "
+            f"max={max_amp:.4f}, rms={rms:.4f}"
         )
 
         return audio, sr
@@ -205,12 +214,19 @@ class AudioPreprocessor:
             return ChunkResult(
                 participant_id=participant_id,
                 total_audio_duration=original_duration,
+                raw_audio_duration=original_duration,
+                vad_audio_duration=0.0,
+                silence_duration=original_duration,
                 sample_rate=sr,
             )
 
         # Step 3: Chunk
         # [DATA_FLOW] VAD audio → chunks
         chunk_result = self.chunker.chunk(vad_audio, participant_id)
+        chunk_result.total_audio_duration = original_duration
+        chunk_result.raw_audio_duration = original_duration
+        chunk_result.vad_audio_duration = vad_duration
+        chunk_result.silence_duration = max(original_duration - vad_duration, 0.0)
 
         logger.info(
             f"[{participant_id}] Chunking: {chunk_result.num_chunks} chunks "

@@ -1,3 +1,23 @@
-from .models import User, Assessment, AssessmentAnswer, MediaFile, ProcessingJob, AssessmentMLDetail, RequestMetric
+from .models import (
+    Assessment,
+    AssessmentAnswer,
+    AssessmentMLDetail,
+    Doctor,
+    DoctorAssignment,
+    MediaFile,
+    ProcessingJob,
+    RequestMetric,
+    User,
+)
 
-__all__ = ["User", "Assessment", "AssessmentAnswer", "MediaFile", "ProcessingJob", "AssessmentMLDetail", "RequestMetric"]
+__all__ = [
+    "User",
+    "Doctor",
+    "DoctorAssignment",
+    "Assessment",
+    "AssessmentAnswer",
+    "MediaFile",
+    "ProcessingJob",
+    "AssessmentMLDetail",
+    "RequestMetric",
+]

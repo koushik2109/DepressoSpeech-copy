@@ -16,8 +16,14 @@ const ForgotPassword = lazy(() => import("./pages/ForgotPassword.jsx"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin.jsx"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard.jsx"));
 const DoctorDashboard = lazy(() => import("./pages/DoctorDashboard.jsx"));
+const Profile = lazy(() => import("./pages/Profile.jsx"));
+const DoctorPatientDetail = lazy(() => import("./pages/DoctorPatientDetail.jsx"));
+const DoctorQueue = lazy(() => import("./pages/DoctorQueue.jsx"));
+const DoctorMarketplace = lazy(() => import("./pages/DoctorMarketplace.jsx"));
+const DoctorReport = lazy(() => import("./pages/DoctorReport.jsx"));
 const Assessment = lazy(() => import("./pages/Assessment.jsx"));
 const AssessmentHistory = lazy(() => import("./pages/AssessmentHistory.jsx"));
+const AssessmentDetail = lazy(() => import("./pages/AssessmentDetail.jsx"));
 const Processing = lazy(() => import("./pages/Processing.jsx"));
 const Results = lazy(() => import("./pages/Results.jsx"));
 
@@ -98,10 +104,66 @@ function App() {
               }
             />
             <Route
+              path="/profile"
+              element={
+                currentUser ? <Profile /> : <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/doctor/reports/:assessmentId"
+              element={
+                canAccessDoctorFlow ? (
+                  <DoctorReport />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/doctor/patients/:patientId"
+              element={
+                canAccessDoctorFlow ? (
+                  <DoctorPatientDetail />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/doctor/patient/:patientId"
+              element={
+                canAccessDoctorFlow ? (
+                  <DoctorPatientDetail />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/doctor/queue"
+              element={
+                canAccessDoctorFlow ? (
+                  <DoctorQueue />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
               path="/assessment"
               element={
                 canAccessPatientFlow ? (
                   <Assessment />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/doctors"
+              element={
+                canAccessPatientFlow ? (
+                  <DoctorMarketplace />
                 ) : (
                   <Navigate to="/login" replace />
                 )
@@ -122,6 +184,16 @@ function App() {
               element={
                 canAccessPatientFlow ? (
                   <AssessmentHistory />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/assessment-history/:assessmentId"
+              element={
+                canAccessPatientFlow ? (
+                  <AssessmentDetail />
                 ) : (
                   <Navigate to="/login" replace />
                 )

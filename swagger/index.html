@@ -15,23 +15,23 @@
            CSS Variables — Design Tokens
            ═══════════════════════════════════════════════ */
         :root {
-            --primary: #6366f1;
-            --primary-dark: #4338ca;
-            --primary-light: #818cf8;
-            --bg-dark: #0f172a;
-            --bg-card: #1e293b;
-            --bg-surface: #1a2332;
-            --bg-hover: #263348;
+            --primary: #2d6a4f;
+            --primary-dark: #1b3a2d;
+            --primary-light: #52b788;
+            --bg-dark: #f4faf7;
+            --bg-card: #ffffff;
+            --bg-surface: #eef7f2;
+            --bg-hover: #e4eee8;
             --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
-            --accent-green: #22c55e;
-            --accent-blue: #3b82f6;
-            --accent-orange: #f59e0b;
+            --text-secondary: #52625a;
+            --text-muted: #6a766f;
+            --accent-green: #2d6a4f;
+            --accent-blue: #1f7a66;
+            --accent-orange: #b54708;
             --accent-red: #ef4444;
             --border-subtle: rgba(255, 255, 255, 0.06);
             --border-light: rgba(255, 255, 255, 0.10);
-            --border-focus: rgba(99, 102, 241, 0.5);
+            --border-focus: rgba(45, 106, 79, 0.35);
             --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
             --radius-sm: 6px;
@@ -39,8 +39,8 @@
             --radius-lg: 14px;
             --radius-xl: 18px;
             --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
-            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
-            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.25);
+            --shadow-md: 0 10px 28px rgba(27, 58, 45, 0.08);
+            --shadow-lg: 0 16px 42px rgba(27, 58, 45, 0.12);
             --transition: 0.2s ease;
         }
 
@@ -898,6 +898,94 @@
         /* ─── Loading animation ─── */
         .swagger-ui .loading-container .loading::after {
             color: var(--primary) !important;
+        }
+
+        /* ─── Modern readability pass ─── */
+        .swagger-ui .wrapper {
+            max-width: 1320px !important;
+            padding: 0 24px !important;
+        }
+
+        .swagger-ui .info {
+            margin: 28px 0 32px !important;
+            padding: 30px 32px !important;
+            border: 1px solid #dcebe3 !important;
+            border-radius: 18px !important;
+            background: #ffffff !important;
+            box-shadow: var(--shadow-lg) !important;
+        }
+
+        .swagger-ui .info .title {
+            color: #1b3a2d !important;
+            font-size: 2.25rem !important;
+            font-weight: 850 !important;
+            letter-spacing: 0 !important;
+        }
+
+        .swagger-ui .opblock-tag {
+            margin: 32px 0 16px !important;
+            padding: 18px 22px !important;
+            border: 1px solid #dcebe3 !important;
+            border-radius: 16px !important;
+            background: #ffffff !important;
+            color: #1b3a2d !important;
+            font-size: 1.45rem !important;
+            font-weight: 850 !important;
+        }
+
+        .swagger-ui .opblock {
+            margin-bottom: 16px !important;
+            border: 1px solid #dcebe3 !important;
+            border-radius: 16px !important;
+            background: #ffffff !important;
+            box-shadow: var(--shadow-md) !important;
+            overflow: hidden !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary {
+            min-height: 64px !important;
+            padding: 14px 18px !important;
+        }
+
+        .swagger-ui .opblock .opblock-summary-method {
+            min-width: 88px !important;
+            border-radius: 10px !important;
+            padding: 9px 12px !important;
+            font-size: 0.84rem !important;
+            font-weight: 850 !important;
+        }
+
+        .swagger-ui table {
+            border: 1px solid #e4eee8 !important;
+            border-radius: 12px !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+            overflow: hidden !important;
+        }
+
+        .swagger-ui table thead tr td,
+        .swagger-ui table thead tr th {
+            background: #f4faf7 !important;
+            color: #1b3a2d !important;
+            font-size: 0.78rem !important;
+            font-weight: 850 !important;
+            letter-spacing: 0.06em !important;
+            text-transform: uppercase !important;
+        }
+
+        .swagger-ui table tbody tr td {
+            padding: 14px 12px !important;
+            border-top: 1px solid #e4eee8 !important;
+            color: #34423b !important;
+            font-size: 0.92rem !important;
+        }
+
+        .swagger-ui .model-title,
+        .swagger-ui .model .property,
+        .swagger-ui .parameter__name,
+        .swagger-ui .parameter__type {
+            font-size: 0.92rem !important;
+            font-weight: 760 !important;
         }
 
         /* ─── Arrow / expand icons ─── */

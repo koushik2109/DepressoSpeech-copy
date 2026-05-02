@@ -10,6 +10,10 @@ export function useAudioRecorder() {
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const captureStatsRef = useRef({
+    sampleRate: 0,
+    blobSize: 0,
+  });
 
   // Cleanup on unmount
   useEffect(() => {
@@ -61,6 +65,10 @@ export function useAudioRecorder() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const mediaRecorder = new MediaRecorder(stream);
+      console.debug(
+        "[AudioCapture] sampleRate",
+        stream.getAudioTracks()[0]?.getSettings?.().sampleRate || 0,
+      );
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -70,6 +78,15 @@ export function useAudioRecorder() {
       mediaRecorder.onstop = () => {
         stopTimer();
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        captureStatsRef.current = {
+          sampleRate:
+            stream.getAudioTracks()[0]?.getSettings?.().sampleRate || 0,
+          blobSize: blob.size,
+        };
+        if (!blob.size) {
+          setError("Captured audio is empty.");
+          return;
+        }
         const url = URL.createObjectURL(blob);
         setAudioUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -78,6 +95,10 @@ export function useAudioRecorder() {
         // Stop all tracks to release the mic
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        console.debug(
+          "[AudioCapture] recording complete",
+          captureStatsRef.current,
+        );
       };
 
       mediaRecorderRef.current = mediaRecorder;

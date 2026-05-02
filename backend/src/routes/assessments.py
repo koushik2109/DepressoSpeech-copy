@@ -2,6 +2,9 @@
 
 import json
 import logging
+import math
+import asyncio
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -10,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from database import get_db, async_session_factory
-from src.models import User, Assessment, AssessmentAnswer, AssessmentMLDetail, MediaFile
+from src.models import User, Assessment, AssessmentAnswer, AssessmentMLDetail, Doctor, DoctorAssignment, MediaFile, ProcessingJob
 from src.middleware.deps import get_current_user, require_patient
 from src.services.ml_client import MLClient
 
@@ -51,6 +54,174 @@ def get_severity_label(score: int) -> str:
     return "Severe"
 
 
+def score_from_ml_output(
+    question_id: int,
+    ml_phq8_score: Optional[float],
+    ml_item_scores: Optional[list],
+) -> int:
+    """Convert model output to a single PHQ item score in the 0-3 range."""
+    if isinstance(ml_item_scores, list) and ml_item_scores:
+        idx = min(max(question_id - 1, 0), len(ml_item_scores) - 1)
+        try:
+            return max(0, min(3, int(round(float(ml_item_scores[idx])))))
+        except (TypeError, ValueError):
+            pass
+
+    normalized = float(ml_phq8_score or 0.0) / 8.0
+    return max(0, min(3, int(round(normalized))))
+
+
+def normalize_severity_label(value: Optional[str], score: Optional[float] = None) -> str:
+    if value:
+        normalized = value.strip().lower().replace("_", " ")
+        mapping = {
+            "none/minimal": "Minimal",
+            "minimal": "Minimal",
+            "mild": "Mild",
+            "moderate": "Moderate",
+            "moderately severe": "Moderately Severe",
+            "severe": "Severe",
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+    return get_severity_label(int(round(score or 0)))
+
+
+def confidence_score_from_interval(mean: Optional[float], std: Optional[float]) -> Optional[float]:
+    if mean is None:
+        return None
+    spread = abs(std or 0.0)
+    # PHQ-8 spans 0-24. A 12-point std is effectively low confidence.
+    return max(0.0, min(1.0, 1.0 - (spread / 12.0)))
+
+
+def distribute_total_score(total_score: int, answers: list, media_by_id: dict) -> dict[int, int]:
+    """Allocate the model's total PHQ-8 score into 0-3 item estimates."""
+    if not answers:
+        return {}
+
+    capped_total = max(0, min(int(total_score), len(answers) * 3))
+    weights = []
+    for answer in answers:
+        media = media_by_id.get(answer.audio_file_id)
+        duration = max(float(answer.duration_sec or 0), 0.0)
+        size_kb = max(float(getattr(media, "file_size", 0) or 0) / 1024.0, 0.0)
+        # Keep the item allocation lightweight: model output controls the total,
+        # recording duration/size only decide how that total is spread per item.
+        weights.append(max(0.1, math.log1p(size_kb) + min(duration, 120.0) / 30.0))
+
+    weight_sum = sum(weights) or len(answers)
+    raw_scores = [(capped_total * weight / weight_sum) for weight in weights]
+    scores = [min(3, int(math.floor(value))) for value in raw_scores]
+    remaining = capped_total - sum(scores)
+
+    order = sorted(
+        range(len(answers)),
+        key=lambda idx: (raw_scores[idx] - math.floor(raw_scores[idx]), weights[idx]),
+        reverse=True,
+    )
+    while remaining > 0:
+        changed = False
+        for idx in order:
+            if scores[idx] >= 3:
+                continue
+            scores[idx] += 1
+            remaining -= 1
+            changed = True
+            if remaining == 0:
+                break
+        if not changed:
+            break
+
+    return {answers[idx].question_id: scores[idx] for idx in range(len(answers))}
+
+
+def ml_detail_payload(detail: AssessmentMLDetail | None, assessment: Assessment | None = None) -> Optional[dict]:
+    if not detail:
+        return None
+
+    confidence_mean = detail.confidence_mean
+    confidence_std = detail.confidence_std
+    return {
+        "phq8Score": assessment.ml_score if assessment else None,
+        "severity": assessment.ml_severity if assessment else None,
+        "numChunks": assessment.ml_num_chunks if assessment else None,
+        "confidenceMean": confidence_mean,
+        "confidenceStd": confidence_std,
+        "confidenceScore": confidence_score_from_interval(confidence_mean, confidence_std),
+        "ciLower": detail.ci_lower,
+        "ciUpper": detail.ci_upper,
+        "audioQualityScore": detail.audio_quality_score,
+        "audioSnrDb": detail.audio_snr_db,
+        "audioSpeechProb": detail.audio_speech_prob,
+        "behavioral": json.loads(detail.behavioral_json) if detail.behavioral_json else {},
+        "inferenceTimeMs": detail.inference_time_ms,
+    }
+
+
+def _is_report_ready(assessment: Assessment) -> bool:
+    return bool(
+        assessment.status == "completed"
+        or assessment.is_report_ready
+        or assessment.report_status == "available"
+        or assessment.ml_score is not None
+    )
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """Make a datetime timezone-aware (UTC). SQLite returns naive datetimes."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+async def _sync_report_state(db: AsyncSession, assessment: Assessment) -> bool:
+    if _is_report_ready(assessment):
+        assessment.status = "completed"
+        assessment.report_status = "available"
+        assessment.is_report_ready = True
+        await db.flush()
+        return True
+
+    job = (await db.execute(
+        select(ProcessingJob)
+        .where(ProcessingJob.assessment_id == assessment.id)
+        .order_by(desc(ProcessingJob.created_at))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    if job and job.progress_pct >= 100 and job.status == "succeeded":
+        assessment.status = "completed"
+        assessment.report_status = "available"
+        assessment.is_report_ready = True
+        await db.flush()
+        return True
+
+    # Timeout recovery: if stuck for > 5 minutes, force-complete with existing scores
+    if assessment.status in ("processing", "preparing"):
+        now = datetime.now(timezone.utc)
+        created_at = _as_utc(assessment.created_at) or now
+        elapsed = (now - created_at).total_seconds()
+        if elapsed > 300:  # 5 minutes
+            assessment.status = "completed"
+            assessment.report_status = "available"
+            assessment.is_report_ready = True
+            if job:
+                job.status = "succeeded"
+                job.progress_pct = 100
+                job.stage = "Completed (timeout recovery)"
+                job.finished_at = now
+            await db.flush()
+            logger.warning(
+                f"[SYNC] Assessment {assessment.id[:8]}... recovered from stuck state after {elapsed:.0f}s"
+            )
+            return True
+
+    return False
+
+
 # ── Schemas ────────────────────────────────────────────
 
 class AnswerInput(BaseModel):
@@ -64,6 +235,13 @@ class CreateAssessmentRequest(BaseModel):
     questionSetVersion: str = "phq8_v1"
     answers: List[AnswerInput] = Field(..., min_length=1, max_length=8)
     recordingCount: int = Field(default=0, ge=0)
+    skipBackgroundInference: bool = False
+
+
+class ScoreQuestionAudioRequest(BaseModel):
+    questionId: int = Field(..., ge=1, le=8)
+    audioFileId: str = Field(..., min_length=1)
+    durationSec: Optional[float] = Field(default=None, ge=0)
 
 
 # ── GET /phq8/questions ────────────────────────────────
@@ -91,6 +269,8 @@ async def create_assessment(
     # Compute total score
     score_total = sum(a.score for a in body.answers)
     severity = get_severity_label(score_total)
+    has_audio = any(bool(a.audioFileId) for a in body.answers)
+    should_run_background_ml = has_audio and not body.skipBackgroundInference
 
     assessment = Assessment(
         user_id=user.id,
@@ -98,7 +278,9 @@ async def create_assessment(
         score_total=score_total,
         severity=severity,
         recording_count=body.recordingCount,
-        status="processing" if body.recordingCount > 0 else "completed",
+        status="processing" if should_run_background_ml else "completed",
+        report_status="pending" if should_run_background_ml else "available",
+        is_report_ready=not should_run_background_ml,
     )
     db.add(assessment)
     await db.flush()
@@ -122,7 +304,17 @@ async def create_assessment(
     user_id = user.id
 
     # If audio was recorded, trigger background ML inference
-    if audio_file_ids:
+    if should_run_background_ml and audio_file_ids:
+        db.add(
+            ProcessingJob(
+                assessment_id=assessment.id,
+                status="running",
+                progress_pct=5,
+                stage="Loading voice responses",
+                started_at=datetime.now(timezone.utc),
+            )
+        )
+        await db.flush()
         background_tasks.add_task(_run_ml_inference, assessment_id, user_id, audio_file_ids)
 
     return {
@@ -131,8 +323,72 @@ async def create_assessment(
             "userId": assessment.user_id,
             "score": assessment.score_total,
             "severity": assessment.severity,
+            "status": assessment.status,
+            "reportStatus": assessment.report_status,
+            "isReportReady": assessment.is_report_ready,
             "createdAt": assessment.created_at.isoformat() if assessment.created_at else None,
         }
+    }
+
+
+# ── POST /assessments/score/question ───────────────────
+
+@router.post("/assessments/score/question")
+async def score_question_audio(
+    body: ScoreQuestionAudioRequest,
+    user: User = Depends(require_patient),
+    db: AsyncSession = Depends(get_db),
+):
+    from pathlib import Path
+    from config.settings import get_settings
+
+    settings = get_settings()
+    media = (await db.execute(
+        select(MediaFile).where(
+            MediaFile.id == body.audioFileId,
+            MediaFile.owner_user_id == user.id,
+        )
+    )).scalar_one_or_none()
+    if not media:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    audio_path = Path(settings.STORAGE_LOCAL_PATH) / media.storage_key
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file missing from storage")
+
+    client = MLClient()
+    try:
+        ml_result = await client.predict_extended(
+            audio_path=str(audio_path),
+            participant_id=user.id,
+        )
+    except Exception as exc:
+        message = str(exc)
+        logger.error(f"[ML] Question scoring failed for user={user.id}, q={body.questionId}: {message}")
+        if "No usable audio chunks" in message or "No speech detected" in message:
+            raise HTTPException(
+                status_code=422,
+                detail="No clear speech detected in this recording. Please re-record and speak clearly for at least a few seconds.",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Voice model service is unavailable. {message}",
+        ) from exc
+
+    ml_score = max(0.0, min(24.0, float(ml_result.get("phq8_score") or 0.0)))
+    question_score = score_from_ml_output(
+        question_id=body.questionId,
+        ml_phq8_score=ml_score,
+        ml_item_scores=ml_result.get("item_scores"),
+    )
+    inference_time_ms = float(ml_result.get("inference_time_s") or 0.0) * 1000.0
+
+    return {
+        "questionId": body.questionId,
+        "score": question_score,
+        "audioFileId": body.audioFileId,
+        "mlScore": round(ml_score, 2),
+        "inferenceTimeMs": round(inference_time_ms, 2),
     }
 
 
@@ -154,6 +410,8 @@ async def get_latest_assessment(
     if not assessment:
         raise HTTPException(status_code=404, detail="No assessment found")
 
+    await _sync_report_state(db, assessment)
+
     # Build answers map
     answers_result = await db.execute(
         select(AssessmentAnswer).where(AssessmentAnswer.assessment_id == assessment.id)
@@ -167,6 +425,10 @@ async def get_latest_assessment(
             "severity": assessment.severity,
             "answers": answers_map,
             "recordingCount": assessment.recording_count,
+            "status": assessment.status,
+            "reportStatus": assessment.report_status,
+            "isReportReady": assessment.is_report_ready,
+            "doctorRemarks": assessment.doctor_remarks,
             "createdAt": assessment.created_at.isoformat() if assessment.created_at else None,
             "mlScore": assessment.ml_score,
             "mlSeverity": assessment.ml_severity,
@@ -204,6 +466,10 @@ async def list_assessments(
             "score": a.score_total,
             "severity": a.severity,
             "recordingCount": a.recording_count,
+            "status": "completed" if _is_report_ready(a) else a.status,
+            "reportStatus": "available" if _is_report_ready(a) else (a.report_status or "pending"),
+            "isReportReady": _is_report_ready(a),
+            "doctorRemarks": a.doctor_remarks,
             "createdAt": a.created_at.isoformat() if a.created_at else None,
             "mlScore": a.ml_score,
             "mlSeverity": a.ml_severity,
@@ -218,6 +484,89 @@ async def list_assessments(
             "pageSize": pageSize,
             "total": total,
         },
+    }
+
+
+# ── GET /assessments/{id} ─────────────────────────────
+
+@router.get("/assessments/{assessment_id}")
+async def get_assessment_detail(
+    assessment_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    assessment = (await db.execute(
+        select(Assessment).where(Assessment.id == assessment_id)
+    )).scalar_one_or_none()
+
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    if assessment.user_id != user.id and user.role == "doctor":
+        doctor = (await db.execute(select(Doctor).where(Doctor.user_id == user.id))).scalar_one_or_none()
+        assigned = None
+        if doctor:
+            assigned = (await db.execute(
+                select(DoctorAssignment).where(
+                    DoctorAssignment.doctor_id == doctor.id,
+                    DoctorAssignment.assessment_id == assessment.id,
+                    DoctorAssignment.status.in_(["pending", "accepted", "completed"]),
+                )
+            )).scalar_one_or_none()
+        if not assigned:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    elif assessment.user_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    await _sync_report_state(db, assessment)
+
+    answers = (await db.execute(
+        select(AssessmentAnswer)
+        .where(AssessmentAnswer.assessment_id == assessment_id)
+        .order_by(AssessmentAnswer.question_id)
+    )).scalars().all()
+
+    media_ids = [answer.audio_file_id for answer in answers if answer.audio_file_id]
+    media_by_id = {}
+    if media_ids:
+        media_files = (await db.execute(
+            select(MediaFile).where(MediaFile.id.in_(media_ids))
+        )).scalars().all()
+        media_by_id = {media.id: media for media in media_files}
+
+    detail = (await db.execute(
+        select(AssessmentMLDetail).where(AssessmentMLDetail.assessment_id == assessment_id)
+    )).scalar_one_or_none()
+
+    questions_by_id = {item["id"]: item for item in PHQ8_QUESTIONS}
+    return {
+        "assessment": {
+            "id": assessment.id,
+            "userId": assessment.user_id,
+            "score": assessment.score_total,
+            "severity": assessment.severity,
+            "recordingCount": assessment.recording_count,
+            "status": assessment.status,
+            "reportStatus": assessment.report_status,
+            "isReportReady": assessment.is_report_ready,
+            "createdAt": assessment.created_at.isoformat() if assessment.created_at else None,
+            "mlScore": assessment.ml_score,
+            "mlSeverity": assessment.ml_severity,
+            "doctorRemarks": assessment.doctor_remarks,
+            "answers": [
+                {
+                    "questionId": answer.question_id,
+                    "questionText": questions_by_id.get(answer.question_id, {}).get("text", ""),
+                    "score": answer.score,
+                    "durationSec": answer.duration_sec,
+                    "audioFileId": answer.audio_file_id,
+                    "audioUrl": f"/api/v1/files/audio/{answer.audio_file_id}" if answer.audio_file_id in media_by_id else None,
+                    "fileName": getattr(media_by_id.get(answer.audio_file_id), "original_filename", None),
+                    "fileSize": getattr(media_by_id.get(answer.audio_file_id), "file_size", None),
+                }
+                for answer in answers
+            ],
+            "mlDetails": ml_detail_payload(detail, assessment),
+        }
     }
 
 
@@ -240,11 +589,52 @@ async def processing_status(
     if assessment.user_id != user.id and user.role not in ("admin", "doctor"):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # For now return completed status since scoring is synchronous
+    await _sync_report_state(db, assessment)
+    now = datetime.now(timezone.utc)
+    created_at = _as_utc(assessment.created_at) or now
+    elapsed_sec = max(0.0, (now - created_at).total_seconds())
+
+    if assessment.status == "failed":
+        return {
+            "status": "failed",
+            "progress": 100,
+            "stage": "Voice analysis failed",
+            "mlScore": assessment.ml_score,
+            "mlSeverity": assessment.ml_severity,
+            "reportReady": False,
+            "elapsedSec": elapsed_sec,
+            "remainingTargetSec": 0.0,
+            "targetMaxSec": 60,
+        }
+
+    job = (await db.execute(
+        select(ProcessingJob)
+        .where(ProcessingJob.assessment_id == assessment_id)
+        .order_by(desc(ProcessingJob.created_at))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    completed = _is_report_ready(assessment)
+    raw_progress = job.progress_pct if job and job.progress_pct is not None else 5
+    progress = 100 if completed else max(0, min(95, int(raw_progress)))
+    stage = "Completed" if completed else (job.stage if job and job.stage else "Loading voice responses")
+    stage_elapsed_sec = None
+    if job and job.started_at:
+        stage_elapsed_sec = max(0.0, (now - _as_utc(job.started_at)).total_seconds())
+
     return {
-        "status": "completed" if assessment.status == "completed" else "processing",
-        "progress": 100 if assessment.status == "completed" else 50,
-        "stage": "Complete" if assessment.status == "completed" else "Analyzing responses",
+        "status": "completed" if completed else "processing",
+        "progress": progress,
+        "stage": stage,
+        "reportReady": completed,
+        "reportStatus": assessment.report_status,
+        "isReportReady": assessment.is_report_ready,
+        "mlScore": assessment.ml_score,
+        "mlSeverity": assessment.ml_severity,
+        "elapsedSec": elapsed_sec,
+        "stageElapsedSec": stage_elapsed_sec,
+        "remainingTargetSec": max(0.0, 60 - elapsed_sec),
+        "targetMaxSec": 60,
     }
 
 
@@ -252,7 +642,6 @@ async def processing_status(
 
 async def _run_ml_inference(assessment_id: str, user_id: str, audio_file_ids: list):
     """Background task: find audio files, send to ML model, store results."""
-    import asyncio
     from pathlib import Path
     from config.settings import get_settings
 
@@ -261,67 +650,151 @@ async def _run_ml_inference(assessment_id: str, user_id: str, audio_file_ids: li
 
     try:
         async with async_session_factory() as db:
-            # Find audio files
+            assessment = (await db.execute(
+                select(Assessment).where(Assessment.id == assessment_id)
+            )).scalar_one_or_none()
+            if not assessment:
+                logger.warning(f"[ML] Assessment not found: {assessment_id}")
+                return
+
+            if _is_report_ready(assessment):
+                return
+
+            job = (await db.execute(
+                select(ProcessingJob)
+                .where(ProcessingJob.assessment_id == assessment_id)
+                .order_by(desc(ProcessingJob.created_at))
+                .limit(1)
+            )).scalar_one_or_none()
+            if job:
+                job.status = "running"
+                job.progress_pct = 10
+                job.stage = "Loading voice responses"
+                if not job.started_at:
+                    job.started_at = datetime.now(timezone.utc)
+                await db.commit()
+
+            answers = (await db.execute(
+                select(AssessmentAnswer)
+                .where(AssessmentAnswer.assessment_id == assessment_id)
+                .order_by(AssessmentAnswer.question_id)
+            )).scalars().all()
+
+            media_ids = [answer.audio_file_id for answer in answers if answer.audio_file_id]
+            if not media_ids:
+                media_ids = audio_file_ids
+
             result = await db.execute(
-                select(MediaFile).where(MediaFile.id.in_(audio_file_ids))
+                select(MediaFile).where(MediaFile.id.in_(media_ids))
             )
             media_files = result.scalars().all()
+            media_by_id = {media.id: media for media in media_files}
 
             if not media_files:
                 logger.warning(f"[ML] No audio files found for assessment {assessment_id}")
-                await db.execute(
-                    select(Assessment).where(Assessment.id == assessment_id)
-                )
-                assessment = (await db.execute(
-                    select(Assessment).where(Assessment.id == assessment_id)
-                )).scalar_one_or_none()
-                if assessment:
-                    assessment.status = "completed"
-                    await db.commit()
+                assessment.status = "failed"
+                if job:
+                    job.status = "failed"
+                    job.progress_pct = 100
+                    job.stage = "No audio files found"
+                    job.finished_at = datetime.now(timezone.utc)
+                await db.commit()
                 return
 
-            # Use the first audio file for ML prediction
-            audio_file = media_files[0]
+            # Use the most informative recording for the model call. This avoids
+            # eight serial Whisper/model passes while still avoiding the old bug
+            # where only question 1 was always analyzed.
+            audio_file = max(
+                media_files,
+                key=lambda media: (
+                    media.file_size or 0,
+                    media.created_at.timestamp() if media.created_at else 0,
+                ),
+            )
             audio_path = Path(settings.STORAGE_LOCAL_PATH) / audio_file.storage_key
 
             if not audio_path.exists():
                 logger.error(f"[ML] Audio file not found on disk: {audio_path}")
+                assessment.status = "failed"
+                if job:
+                    job.status = "failed"
+                    job.progress_pct = 100
+                    job.stage = "Audio file missing"
+                    job.finished_at = datetime.now(timezone.utc)
+                await db.commit()
                 return
 
-            # Call ML model
-            ml_result = await client.predict_extended(
-                audio_path=str(audio_path),
-                participant_id=user_id,
+            if job:
+                job.progress_pct = 35
+                job.stage = "Analyzing voice patterns"
+                await db.commit()
+
+            ml_task = asyncio.create_task(
+                client.predict_extended(
+                    audio_path=str(audio_path),
+                    participant_id=user_id,
+                )
             )
+            while not ml_task.done():
+                await asyncio.sleep(2)
+                if not job:
+                    continue
+                job.progress_pct = min(75, (job.progress_pct or 35) + 8)
+                job.stage = "Analyzing voice patterns" if job.progress_pct < 75 else "Generating score report"
+                await db.commit()
 
-            # Update assessment with ML results
-            assessment = (await db.execute(
-                select(Assessment).where(Assessment.id == assessment_id)
-            )).scalar_one_or_none()
-            if assessment:
-                assessment.ml_score = ml_result.get("phq8_score")
-                assessment.ml_severity = ml_result.get("severity")
-                assessment.ml_num_chunks = ml_result.get("num_chunks")
-                assessment.status = "completed"
+            ml_result = await ml_task
 
-            # Store extended ML details
+            if job:
+                job.progress_pct = 80
+                job.stage = "Generating score report"
+                await db.commit()
+
+            raw_score = float(ml_result.get("phq8_score") or 0)
+            ml_score = max(0.0, min(24.0, raw_score))
+            total_score = int(round(ml_score))
+            severity = normalize_severity_label(ml_result.get("severity"), ml_score)
+
+            assessment.ml_score = ml_score
+            assessment.ml_severity = severity
+            assessment.ml_num_chunks = ml_result.get("num_chunks")
+            assessment.score_total = total_score
+            assessment.severity = get_severity_label(total_score)
+            assessment.status = "completed"
+            assessment.report_status = "available"
+            assessment.is_report_ready = True
+
+            item_scores = distribute_total_score(total_score, answers, media_by_id)
+            for answer in answers:
+                if answer.question_id in item_scores:
+                    answer.score = item_scores[answer.question_id]
+
             confidence = ml_result.get("confidence", {})
             audio_quality = ml_result.get("audio_quality", {})
-            detail = AssessmentMLDetail(
-                assessment_id=assessment_id,
-                confidence_mean=confidence.get("mean"),
-                confidence_std=confidence.get("std"),
-                ci_lower=confidence.get("ci_lower"),
-                ci_upper=confidence.get("ci_upper"),
-                audio_quality_score=audio_quality.get("quality"),
-                audio_snr_db=audio_quality.get("snr_db"),
-                audio_speech_prob=audio_quality.get("speech_prob"),
-                behavioral_json=json.dumps(ml_result.get("behavioral", {})),
-                inference_time_ms=(ml_result.get("inference_time_s", 0) * 1000),
-            )
-            db.add(detail)
+            detail = (await db.execute(
+                select(AssessmentMLDetail).where(AssessmentMLDetail.assessment_id == assessment_id)
+            )).scalar_one_or_none()
+            if not detail:
+                detail = AssessmentMLDetail(assessment_id=assessment_id)
+                db.add(detail)
+            detail.confidence_mean = confidence.get("mean")
+            detail.confidence_std = confidence.get("std")
+            detail.ci_lower = confidence.get("ci_lower")
+            detail.ci_upper = confidence.get("ci_upper")
+            detail.audio_quality_score = audio_quality.get("quality")
+            detail.audio_snr_db = audio_quality.get("snr_db")
+            detail.audio_speech_prob = audio_quality.get("speech_prob")
+            detail.behavioral_json = json.dumps(ml_result.get("behavioral", {}))
+            detail.inference_time_ms = (ml_result.get("inference_time_s", 0) * 1000)
+
+            if job:
+                job.status = "succeeded"
+                job.progress_pct = 100
+                job.stage = "Completed"
+                job.finished_at = datetime.now(timezone.utc)
+
             await db.commit()
-            logger.info(f"[ML] Assessment {assessment_id}: score={ml_result.get('phq8_score')}")
+            logger.info(f"[ML] Assessment {assessment_id}: score={ml_score}")
 
     except Exception as e:
         logger.error(f"[ML] Inference failed for assessment {assessment_id}: {e}")
@@ -331,7 +804,19 @@ async def _run_ml_inference(assessment_id: str, user_id: str, audio_file_ids: li
                     select(Assessment).where(Assessment.id == assessment_id)
                 )).scalar_one_or_none()
                 if assessment:
-                    assessment.status = "completed"
+                    assessment.status = "failed"
+                    job = (await db.execute(
+                        select(ProcessingJob)
+                        .where(ProcessingJob.assessment_id == assessment_id)
+                        .order_by(desc(ProcessingJob.created_at))
+                        .limit(1)
+                    )).scalar_one_or_none()
+                    if job:
+                        job.status = "failed"
+                        job.progress_pct = 100
+                        job.stage = "Voice analysis failed"
+                        job.error_message = str(e)
+                        job.finished_at = datetime.now(timezone.utc)
                     await db.commit()
         except Exception:
             pass
@@ -358,19 +843,4 @@ async def get_ml_details(
         select(AssessmentMLDetail).where(AssessmentMLDetail.assessment_id == assessment_id)
     )).scalar_one_or_none()
 
-    if not detail:
-        return {"mlDetails": None}
-
-    return {
-        "mlDetails": {
-            "confidenceMean": detail.confidence_mean,
-            "confidenceStd": detail.confidence_std,
-            "ciLower": detail.ci_lower,
-            "ciUpper": detail.ci_upper,
-            "audioQualityScore": detail.audio_quality_score,
-            "audioSnrDb": detail.audio_snr_db,
-            "audioSpeechProb": detail.audio_speech_prob,
-            "behavioral": json.loads(detail.behavioral_json) if detail.behavioral_json else {},
-            "inferenceTimeMs": detail.inference_time_ms,
-        }
-    }
+    return {"mlDetails": ml_detail_payload(detail, assessment)}

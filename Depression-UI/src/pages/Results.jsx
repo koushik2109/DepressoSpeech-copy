@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart,
@@ -23,12 +23,14 @@ import ChartPanel from "../components/ChartPanel.jsx";
 import {
   getSeverityDescription,
   getSeverityLabel,
-  PHQ8_OPTIONS,
+  PHQ8_QUESTIONS,
 } from "../data/questionsData.js";
 import {
   getCurrentUser,
+  getAssessmentDetail,
   listAssessments,
   getMLDetails,
+  invalidateCache,
 } from "../services/api.js";
 
 const severityGuidance = {
@@ -82,40 +84,107 @@ const severityColors = {
   Severe: "#EF4444",
 };
 
+function readLatestAssessment() {
+  try {
+    return JSON.parse(sessionStorage.getItem("latestAssessment") || "null");
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAssessmentDetail(detail, fallback) {
+  if (!detail) return fallback;
+  const answers = Array.isArray(detail.answers)
+    ? detail.answers.reduce((acc, item) => {
+        acc[item.questionId] = item.score;
+        return acc;
+      }, {})
+    : detail.answers;
+
+  return {
+    ...(fallback || {}),
+    ...detail,
+    answers,
+    score: detail.score ?? fallback?.score,
+    severity: detail.severity || fallback?.severity,
+    recordingCount: detail.recordingCount ?? fallback?.recordingCount,
+  };
+}
+
 export default function Results() {
+  const [assessment, setAssessment] = useState(() => readLatestAssessment());
   const [allAssessments, setAllAssessments] = useState([]);
   const [mlDetails, setMlDetails] = useState(null);
-
-  let assessment = null;
-  try {
-    assessment = JSON.parse(
-      sessionStorage.getItem("latestAssessment") || "null",
-    );
-  } catch {
-    assessment = null;
-  }
+  const [fallbackReportDate] = useState(() => Date.now());
 
   const score = assessment?.score ?? 0;
   const severity = assessment?.severity || getSeverityLabel(score);
   const severityColor = severityColors[severity] || "#2D6A4F";
-  const answerCount = assessment?.answers
-    ? Object.keys(assessment.answers).length
-    : 0;
+  const assessmentAnswers = assessment ? assessment.answers : null;
+  const answerMap = useMemo(() => {
+    if (Array.isArray(assessmentAnswers)) {
+      return assessmentAnswers.reduce((acc, item) => {
+        acc[item.questionId] = item.score;
+        return acc;
+      }, {});
+    }
+    return assessmentAnswers || {};
+  }, [assessmentAnswers]);
+  const answerCount = Object.keys(answerMap).length;
   const user = getCurrentUser();
 
-  useEffect(() => {
-    listAssessments()
-      .then(setAllAssessments)
-      .catch(() => setAllAssessments([]));
-  }, []);
+  const refreshAssessments = useCallback(
+    () =>
+      listAssessments()
+        .then(setAllAssessments)
+        .catch(() => setAllAssessments([])),
+    [],
+  );
 
   useEffect(() => {
-    if (assessment?.id) {
-      getMLDetails(assessment.id)
-        .then((data) => setMlDetails(data.mlDetails))
-        .catch(() => setMlDetails(null));
+    refreshAssessments();
+  }, [refreshAssessments]);
+
+  useEffect(() => {
+    const assessmentId = assessment?.id;
+    const assessmentStatus = assessment?.status;
+    if (!assessmentId) return undefined;
+
+    let stopped = false;
+    let intervalId = null;
+
+    const refreshCurrent = async () => {
+      try {
+        const detail = await getAssessmentDetail(assessmentId);
+        if (stopped) return;
+        setAssessment((current) => {
+          const next = normalizeAssessmentDetail(detail, current);
+          sessionStorage.setItem("latestAssessment", JSON.stringify(next));
+          return next;
+        });
+        setMlDetails(detail.mlDetails ?? null);
+        if (detail.status === "completed" || detail.status === "failed") {
+          invalidateCache("GET:/assessments");
+          refreshAssessments();
+          if (intervalId) clearInterval(intervalId);
+        }
+      } catch {
+        getMLDetails(assessmentId)
+          .then((data) => !stopped && setMlDetails(data.mlDetails))
+          .catch(() => !stopped && setMlDetails(null));
+      }
+    };
+
+    refreshCurrent();
+    if (assessmentStatus !== "completed" && assessmentStatus !== "failed") {
+      intervalId = setInterval(refreshCurrent, 2000);
     }
-  }, [assessment?.id]);
+
+    return () => {
+      stopped = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [assessment?.id, assessment?.status, refreshAssessments]);
 
   const userAssessments = allAssessments
     .filter((item) => {
@@ -145,16 +214,15 @@ export default function Results() {
 
   const guidance = severityGuidance[severity] || severityGuidance.Mild;
 
-  const chartData = PHQ8_OPTIONS.map((option) => ({
-    name: option.label,
-    value: score >= option.value ? Math.max(10, (option.value + 1) * 15) : 0,
-    color:
-      option.value <= 1
-        ? "#52B788"
-        : option.value === 2
-          ? "#FBBF24"
-          : "#FB923C",
-  }));
+  const chartData = PHQ8_QUESTIONS.map((questionItem) => {
+    const itemScore = Number(answerMap[questionItem.id] ?? 0);
+    return {
+      name: `Q${questionItem.id}`,
+      value: Math.round((itemScore / 3) * 100),
+      color:
+        itemScore <= 1 ? "#52B788" : itemScore === 2 ? "#FBBF24" : "#FB923C",
+    };
+  });
 
   const severityData = {
     level: severity,
@@ -162,7 +230,7 @@ export default function Results() {
     description: getSeverityDescription(score),
   };
 
-  const reportDate = new Date(assessment?.createdAt || Date.now());
+  const reportDate = new Date(assessment?.createdAt || fallbackReportDate);
   const formattedDate = reportDate.toLocaleDateString("en-IN", {
     day: "numeric",
     month: "long",
@@ -170,7 +238,7 @@ export default function Results() {
   });
 
   return (
-    <div className="pt-20 min-h-screen bg-[#F7F7F2]">
+    <div className="pt-24 lg:pt-28 min-h-screen bg-[#F7F7F2]">
       {/* ─── Header Banner ─── */}
       <div className="results-header">
         <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
@@ -273,7 +341,7 @@ export default function Results() {
               </svg>
             </div>
             <p className="text-xs font-medium text-[#777] mb-1">Status</p>
-            <p className="text-2xl font-bold text-[#10B981]">Complete</p>
+            <p className="text-2xl font-bold text-[#10B981]">Completed</p>
             <p className="text-xs text-[#B5B5B5]">Ready for review</p>
           </div>
           <div className="results-stat-card">
@@ -427,6 +495,17 @@ export default function Results() {
               </div>
             </div>
 
+            {assessment?.doctorRemarks && (
+              <div className="results-section-card">
+                <h3 className="text-lg font-bold text-[#1B1B1B] mb-4">
+                  Doctor Remarks
+                </h3>
+                <p className="text-sm text-[#555] leading-relaxed">
+                  {assessment.doctorRemarks}
+                </p>
+              </div>
+            )}
+
             <div className="results-section-card">
               <h3 className="text-lg font-bold text-[#1B1B1B] mb-5">
                 Suggestions
@@ -477,7 +556,11 @@ export default function Results() {
                         { name: "Self-Report", value: score, fill: "#52B788" },
                         {
                           name: "ML Voice",
-                          value: mlDetails.confidenceMean ?? 0,
+                          value:
+                            mlDetails.phq8Score ??
+                            mlDetails.confidenceMean ??
+                            assessment?.mlScore ??
+                            0,
                           fill: "#2D6A4F",
                         },
                       ]}
@@ -502,8 +585,8 @@ export default function Results() {
                 </div>
                 {mlDetails.confidenceStd > 0 && (
                   <p className="text-xs text-[#777] mt-2 text-center">
-                    ML confidence: ±{mlDetails.confidenceStd.toFixed(2)} (CI:{" "}
-                    {mlDetails.ciLower?.toFixed(1)}–
+                    ML uncertainty: ±{mlDetails.confidenceStd.toFixed(2)} PHQ-8
+                    points (CI: {mlDetails.ciLower?.toFixed(1)}–
                     {mlDetails.ciUpper?.toFixed(1)})
                   </p>
                 )}
@@ -643,32 +726,42 @@ export default function Results() {
         )}
 
         {/* Voice analysis pending badge */}
-        {!mlDetails && (assessment?.recordingCount || 0) > 0 && (
+        {!mlDetails && assessment?.status === "failed" && (
           <div className="mb-10 results-section-card text-center py-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FEF3C7] text-[#92400E] text-sm font-medium">
-              <svg
-                className="w-4 h-4 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
-              </svg>
-              Voice analysis pending — results will appear here when ready
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FEE2E2] text-[#991B1B] text-sm font-medium">
+              Voice analysis could not be completed for this session.
             </div>
           </div>
         )}
+
+        {!mlDetails &&
+          assessment?.status !== "failed" &&
+          (assessment?.recordingCount || 0) > 0 && (
+            <div className="mb-10 results-section-card text-center py-8">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FEF3C7] text-[#92400E] text-sm font-medium">
+                <svg
+                  className="w-4 h-4 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+                Voice analysis pending — results will appear here when ready
+              </div>
+            </div>
+          )}
 
         {/* ─── Actions ─── */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -676,6 +769,9 @@ export default function Results() {
             <button className="results-btn-primary">
               Take Another Assessment
             </button>
+          </Link>
+          <Link to="/doctors">
+            <button className="results-btn-primary">Find Doctor</button>
           </Link>
           <Link to="/">
             <button className="results-btn-outline">Return to Home</button>

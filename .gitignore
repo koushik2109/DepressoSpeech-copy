@@ -22,7 +22,7 @@ Thumbs.db
 # Backend
 backend/mindscope.db
 backend/uploads/
-
+backend/storage/audio
 # Frontend
 Depression-UI/node_modules/
 Depression-UI/dist/

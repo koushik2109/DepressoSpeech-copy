@@ -6,104 +6,154 @@ import VoiceRecorder from "../components/VoiceRecorder.jsx";
 import { buildQuestionSet, getSeverityLabel } from "../data/questionsData.js";
 import {
   getCurrentUser,
+  scoreQuestionAudio,
   saveAssessment,
   uploadAudio,
 } from "../services/api.js";
+
+function clampScore3(value) {
+  return Math.max(0, Math.min(3, Math.round(Number(value || 0))));
+}
 
 export default function Assessment() {
   const navigate = useNavigate();
   const [currentQ, setCurrentQ] = useState(0);
   const [voiceScores, setVoiceScores] = useState({});
   const [recordings, setRecordings] = useState({});
-
+  const [audioFileIds, setAudioFileIds] = useState({});
+  const [scoringQuestionId, setScoringQuestionId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [lastLatencyMs, setLastLatencyMs] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const user = useMemo(() => getCurrentUser(), []);
   const questions = useMemo(() => buildQuestionSet(), []);
   const question = questions[currentQ];
+  const questionId = question?.id;
+  const hasRecording = Boolean(recordings[questionId]);
+  const existingScore = voiceScores[questionId];
+  const isLast = currentQ === questions.length - 1;
+  const isScoringCurrent = scoringQuestionId === questionId;
+  const isBusy = submitting || Boolean(scoringQuestionId);
+  const canProceed = hasRecording && !isBusy;
 
   const score = Object.values(voiceScores).reduce(
     (total, value) => total + Number(value || 0),
     0,
   );
   const progress = ((currentQ + 1) / questions.length) * 100;
-  const isLast = currentQ === questions.length - 1;
-  const hasRecording = Boolean(recordings[question?.id]);
   const completedCount = questions.filter((item) => recordings[item.id]).length;
   const upcomingQuestion = !isLast ? questions[currentQ + 1] : null;
 
   const handleRecordingComplete = (blob, previewUrl, durationSeconds) => {
+    setErrorMessage("");
     setRecordings((previous) => ({
       ...previous,
-      [question.id]: {
+      [questionId]: {
         blob,
         previewUrl,
         durationSeconds,
       },
     }));
 
-    // Score is determined by the ML model, NOT by recording duration.
-    // Initialize with 0 — the real score comes back from the server
-    // via ml_score after background inference completes.
-    setVoiceScores((previous) => ({
-      ...previous,
-      [question.id]: 0,
-    }));
+    // New recording invalidates existing score and uploaded file for this question.
+    setVoiceScores((previous) => {
+      const next = { ...previous };
+      delete next[questionId];
+      return next;
+    });
+    setAudioFileIds((previous) => {
+      const next = { ...previous };
+      delete next[questionId];
+      return next;
+    });
   };
 
   const handleRecordingCleared = () => {
+    setErrorMessage("");
     setRecordings((previous) => {
       const next = { ...previous };
-      delete next[question.id];
+      delete next[questionId];
       return next;
     });
-
     setVoiceScores((previous) => {
       const next = { ...previous };
-      delete next[question.id];
+      delete next[questionId];
+      return next;
+    });
+    setAudioFileIds((previous) => {
+      const next = { ...previous };
+      delete next[questionId];
       return next;
     });
   };
 
   const handleNext = async () => {
-    if (!hasRecording) {
+    if (!hasRecording || isBusy) {
       return;
     }
+    setErrorMessage("");
+
+    let questionScore = Number(existingScore);
+    let currentAudioFileId = audioFileIds[questionId];
+
+    if (!Number.isFinite(questionScore) || !currentAudioFileId) {
+      setScoringQuestionId(questionId);
+      try {
+        const currentRecording = recordings[questionId];
+        if (!currentRecording?.blob) {
+          throw new Error("Recording is required for this question.");
+        }
+
+        const uploaded = await uploadAudio(currentRecording.blob, `q${questionId}.webm`);
+        currentAudioFileId = uploaded.fileId;
+
+        const scored = await scoreQuestionAudio({
+          questionId,
+          audioFileId: currentAudioFileId,
+          durationSec: currentRecording.durationSeconds ?? null,
+        });
+        questionScore = clampScore3(scored.score);
+        setLastLatencyMs(Number(scored.inferenceTimeMs ?? 0));
+      } catch (error) {
+        setErrorMessage(error.message || "Failed to score this question.");
+        return;
+      } finally {
+        setScoringQuestionId(null);
+      }
+    }
+
+    const nextScores = {
+      ...voiceScores,
+      [questionId]: clampScore3(questionScore),
+    };
+    const nextAudioFileIds = {
+      ...audioFileIds,
+      [questionId]: currentAudioFileId,
+    };
+    setVoiceScores(nextScores);
+    setAudioFileIds(nextAudioFileIds);
 
     if (isLast) {
       setSubmitting(true);
       try {
-        // Upload all audio recordings IN PARALLEL for lower total latency
-        const uploadEntries = Object.entries(recordings).filter(
-          ([, rec]) => rec.blob,
+        const finalScore = Object.values(nextScores).reduce(
+          (total, value) => total + Number(value || 0),
+          0,
         );
-        const uploadResults = await Promise.allSettled(
-          uploadEntries.map(([qId, rec]) =>
-            uploadAudio(rec.blob, `q${qId}.webm`).then((res) => ({
-              qId,
-              fileId: res.fileId,
-            })),
-          ),
-        );
-        const audioFileIds = {};
-        for (const result of uploadResults) {
-          if (result.status === "fulfilled") {
-            audioFileIds[result.value.qId] = result.value.fileId;
-          } else {
-            console.warn("Audio upload failed:", result.reason);
-          }
-        }
 
         const latestAssessment = {
           userId: user?.id || null,
           userName: user?.name || "",
           email: user?.email || "",
           role: user?.role || "",
-          answers: voiceScores,
-          audioFileIds,
-          score,
-          severity: getSeverityLabel(score),
+          answers: nextScores,
+          audioFileIds: nextAudioFileIds,
+          recordings,
+          score: finalScore,
+          severity: getSeverityLabel(finalScore),
           recordingCount: Object.keys(recordings).length,
+          skipBackgroundInference: false,
           createdAt: new Date().toISOString(),
         };
 
@@ -111,7 +161,7 @@ export default function Assessment() {
         sessionStorage.setItem("latestAssessment", JSON.stringify(saved));
         navigate("/processing");
       } catch (error) {
-        console.error("Failed to save assessment:", error);
+        setErrorMessage(error.message || "Failed to save assessment.");
       } finally {
         setSubmitting(false);
       }
@@ -122,7 +172,8 @@ export default function Assessment() {
   };
 
   const handlePrev = () => {
-    if (currentQ > 0) {
+    if (currentQ > 0 && !isBusy) {
+      setErrorMessage("");
       setCurrentQ((previous) => previous - 1);
     }
   };
@@ -138,7 +189,7 @@ export default function Assessment() {
             {user?.name ? `Welcome back, ${user.name}` : "PHQ-8 Screening"}
           </h1>
           <p className="mt-3 text-base text-[#777]">
-            Each question is on its own step. Record your response and continue.
+            Record your answer, then continue. The model scores each answer out of 3.
           </p>
         </div>
 
@@ -172,8 +223,7 @@ export default function Assessment() {
 
             <div className="rounded-2xl border border-[#E8E8E8] bg-[#FAFAF7] p-5">
               <p className="text-sm text-[#555] leading-relaxed">
-                Use the live waveform to keep a steady voice response. Record
-                once, replay, and continue when ready.
+                Click Next to run model scoring for this question from your recorded audio.
               </p>
             </div>
 
@@ -181,9 +231,23 @@ export default function Assessment() {
               <p className="text-xs tracking-[0.16em] uppercase font-semibold text-[#52B788] mb-2">
                 Voice Recorder
               </p>
-              <p className="text-sm text-[#777] mb-6">
+              <p className="text-sm text-[#777] mb-2">
                 Completed {completedCount} of {questions.length} responses.
               </p>
+              {Number.isFinite(Number(existingScore)) ? (
+                <p className="text-sm font-semibold text-[#2D6A4F] mb-4">
+                  Current question score: {clampScore3(existingScore)}/3
+                </p>
+              ) : (
+                <p className="text-sm text-[#6A766F] mb-4">
+                  Current question score: pending
+                </p>
+              )}
+              {lastLatencyMs != null && (
+                <p className="text-xs text-[#6A766F] mb-4">
+                  Last model response time: {(lastLatencyMs / 1000).toFixed(2)}s
+                </p>
+              )}
 
               <VoiceRecorder
                 key={question.id}
@@ -191,6 +255,12 @@ export default function Assessment() {
                 onRecordingCleared={handleRecordingCleared}
               />
             </div>
+
+            {errorMessage && (
+              <div className="rounded-xl border border-[#F1C7C7] bg-[#FFF4F4] px-4 py-3">
+                <p className="text-sm font-medium text-[#A94442]">{errorMessage}</p>
+              </div>
+            )}
 
             {upcomingQuestion && hasRecording && (
               <div className="rounded-xl border border-[#E8E8E8] bg-[#F8FBF9] px-4 py-4">
@@ -207,7 +277,7 @@ export default function Assessment() {
               <Button
                 variant="ghost"
                 onClick={handlePrev}
-                disabled={currentQ === 0}
+                disabled={currentQ === 0 || isBusy}
               >
                 <svg
                   className="w-4 h-4"
@@ -228,13 +298,15 @@ export default function Assessment() {
               <Button
                 variant="primary"
                 onClick={handleNext}
-                disabled={!hasRecording || submitting}
+                disabled={!canProceed}
               >
-                {submitting
-                  ? "Uploading..."
-                  : isLast
-                    ? "Submit Assessment"
-                    : "Next Question"}
+                {isScoringCurrent
+                  ? "Scoring..."
+                  : submitting
+                    ? "Submitting..."
+                    : isLast
+                      ? "Submit Assessment"
+                      : "Next Question"}
                 <svg
                   className="w-4 h-4"
                   fill="none"

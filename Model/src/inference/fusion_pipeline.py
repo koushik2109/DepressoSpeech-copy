@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from src.preprocessing.audio_preprocessor import AudioPreprocessor
 from src.features import EgemapsExtractor, MfccExtractor, TextExtractor
+from src.features.audio_quality import AudioQualityScorer
 from src.inference.fusion_predictor import FusionPredictor
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ class FusionPredictionResult:
     num_chunks: int
     participant_id: str = "unknown"
     inference_time_s: float = 0.0
+    item_scores: list = None
+    debug: dict = None
 
     @staticmethod
     def severity_label(score: float) -> str:
@@ -45,7 +48,19 @@ class FusionPredictionResult:
             return "severe"
 
 
-def extract_behavioral_from_chunks(chunks, sample_rate: int = 16000) -> np.ndarray:
+@dataclass
+class FusionExtendedPredictionResult(FusionPredictionResult):
+    confidence: dict = None
+    audio_quality: dict = None
+    behavioral: dict = None
+
+
+def extract_behavioral_from_chunks(
+    chunks,
+    sample_rate: int = 16000,
+    raw_audio_duration: float = 0.0,
+    vad_audio_duration: float = 0.0,
+) -> np.ndarray:
     """
     Extract 16 behavioral features from audio chunks at inference time.
 
@@ -56,7 +71,7 @@ def extract_behavioral_from_chunks(chunks, sample_rate: int = 16000) -> np.ndarr
     Returns: (16,) float32
     """
     n_chunks = len(chunks)
-    if n_chunks < 2:
+    if n_chunks == 0:
         return np.zeros(16, dtype=np.float32)
 
     # Estimate durations from audio chunk lengths
@@ -80,23 +95,26 @@ def extract_behavioral_from_chunks(chunks, sample_rate: int = 16000) -> np.ndarr
     # NOTE: All absolute-duration features (total_speaking_time,
     # interview_duration, total_word_count, n_chunks) are replaced with
     # ratios/rates to prevent audio-length bias.
+    silence_duration = max(raw_audio_duration - vad_audio_duration, 0.0)
+    pause_ratio = silence_duration / max(raw_audio_duration, 1.0)
+
     return np.array([
         min(n_chunks / 10.0, 1.0),               # turn_density (0-1, capped at 10 turns)
         durations.mean(),                         # avg_turn_duration
         durations.std(),                          # turn_duration_std
-        gaps.mean() if len(gaps) > 0 else 0,      # avg_pause
+        max(gaps.mean() if len(gaps) > 0 else 0, pause_ratio),      # avg_pause
         gaps.std() if len(gaps) > 0 else 0,       # pause_std
-        np.median(gaps) if len(gaps) > 0 else 0,  # median_pause
-        (gaps > 3.0).mean() if len(gaps) > 0 else 0,  # long_pause_frac
+        max(np.median(gaps) if len(gaps) > 0 else 0, pause_ratio),  # median_pause
+        max((gaps > 3.0).mean() if len(gaps) > 0 else 0, pause_ratio),  # long_pause_frac
         speaking_rates.mean(),                    # avg_speaking_rate
         speaking_rates.std(),                     # rate_std
-        speaking_ratio,                           # speaking_ratio (normalized)
+        min(1.0, speaking_ratio * max(0.25, 1.0 - pause_ratio / 2.0)),  # speaking_ratio
         durations.max() / max(durations.mean(), 0.1) - 1.0,  # turn_duration_range (ratio)
         word_counts.mean(),                       # avg_words_per_turn
         word_counts.std(),                        # words_per_turn_std
         (durations < durations.mean()).mean(),     # short_turn_frac
         (durations > durations.mean()).mean(),     # long_turn_frac
-        (gaps > gaps.mean()).mean() if len(gaps) > 0 else 0,  # above_avg_pause_frac
+        max((gaps > gaps.mean()).mean() if len(gaps) > 0 else 0, pause_ratio),  # above_avg_pause_frac
     ], dtype=np.float32)
 
 
@@ -119,11 +137,13 @@ class FusionInferencePipeline:
         text_checkpoint: str = "checkpoints/best_model.pt",
         audio_config: Optional[dict] = None,
         device: str = "auto",
+        use_text_transcription: bool = False,
     ):
         self.fusion_checkpoint = fusion_checkpoint
         self.text_checkpoint = text_checkpoint
         self.audio_config = audio_config
         self.device = device
+        self.use_text_transcription = use_text_transcription
 
         # Lazy initialization
         self._preprocessor = None
@@ -135,7 +155,8 @@ class FusionInferencePipeline:
 
         logger.info(
             f"FusionInferencePipeline initialized: "
-            f"fusion={Path(fusion_checkpoint).name}, text={Path(text_checkpoint).name}"
+            f"fusion={Path(fusion_checkpoint).name}, text={Path(text_checkpoint).name}, "
+            f"text_transcription={self.use_text_transcription}"
         )
 
     def _get_preprocessor(self):
@@ -158,6 +179,22 @@ class FusionInferencePipeline:
             self._text = TextExtractor()
         return self._text
 
+    @staticmethod
+    def _normalize_features(features: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+        if features.shape[0] < 2:
+            return np.nan_to_num(features.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        mean = features.mean(axis=0, keepdims=True)
+        std = features.std(axis=0, keepdims=True)
+        std = np.where(std < eps, 1.0, std)
+        return ((features - mean) / std).astype(np.float32)
+
+    def _build_text_proxy_embeddings(self, mfcc: np.ndarray, egemaps: np.ndarray) -> np.ndarray:
+        mfcc_norm = self._normalize_features(mfcc)
+        egemaps_norm = self._normalize_features(egemaps)
+        audio_stack = np.concatenate([egemaps_norm, mfcc_norm], axis=1).astype(np.float32)
+        reps = int(np.ceil(384 / audio_stack.shape[1]))
+        return np.tile(audio_stack, (1, reps))[:, :384].astype(np.float32)
+
     def _get_predictor(self):
         if self._predictor is None:
             self._predictor = FusionPredictor(
@@ -168,7 +205,7 @@ class FusionInferencePipeline:
         return self._predictor
 
     def predict_from_audio(
-        self, audio_path: str, participant_id: str = "unknown"
+        self, audio_path: str, participant_id: str = "unknown", debug: bool = False
     ) -> FusionPredictionResult:
         """
         Full pipeline: audio file → PHQ-8 score.
@@ -201,28 +238,34 @@ class FusionInferencePipeline:
         # 2. Extract per-chunk features
         egemaps = self._get_egemaps().extract_from_audio(audio_chunks, sample_rate)
         mfcc = self._get_mfcc().extract_from_audio(audio_chunks, sample_rate)
-        text_emb = self._get_text().extract_from_audio(audio_chunks, sample_rate)
 
         # Align chunk counts
-        min_chunks = min(egemaps.shape[0], mfcc.shape[0], text_emb.shape[0])
+        min_chunks = min(egemaps.shape[0], mfcc.shape[0])
         egemaps = egemaps[:min_chunks]
         mfcc = mfcc[:min_chunks]
-        text_emb = text_emb[:min_chunks]
+        if self.use_text_transcription:
+            text_emb = self._get_text().extract_from_audio(audio_chunks, sample_rate)[:min_chunks]
+        else:
+            text_emb = self._build_text_proxy_embeddings(mfcc, egemaps)
 
         # 3. Extract behavioral features
         behavioral = extract_behavioral_from_chunks(
-            chunk_result.chunks[:min_chunks], sample_rate
+            chunk_result.chunks[:min_chunks],
+            sample_rate,
+            raw_audio_duration=chunk_result.raw_audio_duration,
+            vad_audio_duration=chunk_result.vad_audio_duration,
         )
 
         # 4. Predict
         predictor = self._get_predictor()
-        score = predictor.predict(text_emb, mfcc, egemaps, behavioral)
+        score, debug_info = predictor.predict_with_debug(text_emb, mfcc, egemaps, behavioral)
         display_score = max(0.0, min(24.0, score))
+        item_scores = debug_info.get("item_scores") if debug_info else None
 
         elapsed = time.perf_counter() - t_start
         logger.info(
             f"Prediction: pid={participant_id}, score={display_score:.2f}, "
-            f"chunks={min_chunks}, time={elapsed:.2f}s"
+            f"chunks={min_chunks}, pause={behavioral[3]:.3f}, time={elapsed:.2f}s"
         )
 
         return FusionPredictionResult(
@@ -231,6 +274,106 @@ class FusionInferencePipeline:
             num_chunks=min_chunks,
             participant_id=participant_id,
             inference_time_s=round(elapsed, 3),
+            item_scores=item_scores,
+            debug=debug_info if debug else None,
+        )
+
+    def predict_from_audio_extended(
+        self, audio_path: str, participant_id: str = "unknown", debug: bool = False
+    ):
+        """
+        Extended fusion inference used by the app report pages.
+
+        This keeps the trained fusion model untouched and adds only reporting
+        metadata around the deterministic prediction.
+        """
+        audio_path = Path(audio_path)
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+        t_start = time.perf_counter()
+
+        preprocessor = self._get_preprocessor()
+        chunk_result = preprocessor.process_single(
+            audio_path=str(audio_path), participant_id=participant_id,
+        )
+
+        if chunk_result.num_chunks == 0:
+            raise ValueError(f"No usable audio chunks for '{participant_id}'")
+
+        audio_chunks = np.stack([c.audio for c in chunk_result.chunks])
+        sample_rate = preprocessor.sample_rate
+
+        quality_scorer = AudioQualityScorer(sample_rate=sample_rate)
+        concat_audio = np.concatenate([c.audio for c in chunk_result.chunks])
+        quality_score, quality_details = quality_scorer.score_segment(concat_audio)
+
+        egemaps = self._get_egemaps().extract_from_audio(audio_chunks, sample_rate)
+        mfcc = self._get_mfcc().extract_from_audio(audio_chunks, sample_rate)
+
+        min_chunks = min(egemaps.shape[0], mfcc.shape[0])
+        egemaps = egemaps[:min_chunks]
+        mfcc = mfcc[:min_chunks]
+        if self.use_text_transcription:
+            text_emb = self._get_text().extract_from_audio(audio_chunks, sample_rate)[:min_chunks]
+        else:
+            text_emb = self._build_text_proxy_embeddings(mfcc, egemaps)
+
+        behavioral_vector = extract_behavioral_from_chunks(
+            chunk_result.chunks[:min_chunks],
+            sample_rate,
+            raw_audio_duration=chunk_result.raw_audio_duration,
+            vad_audio_duration=chunk_result.vad_audio_duration,
+        )
+        predictor = self._get_predictor()
+        score, debug_info = predictor.predict_with_debug(text_emb, mfcc, egemaps, behavioral_vector)
+        display_score = max(0.0, min(24.0, score))
+        elapsed = time.perf_counter() - t_start
+
+        durations = np.array([len(c.audio) / sample_rate for c in chunk_result.chunks[:min_chunks]])
+        egemaps_dim = egemaps.shape[1] if egemaps.ndim > 1 else 88
+        egemaps_mean = egemaps.mean(axis=0) if egemaps.size else np.zeros(egemaps_dim)
+        behavioral = {
+            "f0_mean": float(egemaps_mean[0]) if egemaps_mean.shape[0] > 0 else 0.0,
+            "f0_std": float(egemaps_mean[1]) if egemaps_mean.shape[0] > 1 else 0.0,
+            "jitter": float(egemaps_mean[2]) if egemaps_mean.shape[0] > 2 else 0.0,
+            "shimmer": float(egemaps_mean[3]) if egemaps_mean.shape[0] > 3 else 0.0,
+            "loudness_mean": float(egemaps_mean[4]) if egemaps_mean.shape[0] > 4 else 0.0,
+            "loudness_std": float(egemaps_mean[5]) if egemaps_mean.shape[0] > 5 else 0.0,
+            "turn_density": float(behavioral_vector[0]),
+            "avg_turn_duration": float(behavioral_vector[1]),
+            "avg_pause": float(behavioral_vector[3]),
+            "speaking_ratio": float(behavioral_vector[9]),
+            "num_chunks": int(min_chunks),
+            "avg_chunk_duration": float(durations.mean()) if durations.size else 0.0,
+            "total_duration": float(durations.sum()) if durations.size else 0.0,
+            "mfcc_activity": float(np.mean(np.std(mfcc, axis=0))) if mfcc.shape[0] > 1 else float(np.mean(np.abs(mfcc))),
+            "egemaps_activity": float(np.mean(np.std(egemaps, axis=0))) if egemaps.shape[0] > 1 else float(np.mean(np.abs(egemaps))),
+            "fusion_mode": "audio_text" if getattr(predictor, "use_fusion", False) else "text_only",
+            "fusion_val_ccc": getattr(predictor, "metadata", {}).get("val_ccc"),
+        }
+
+        return FusionExtendedPredictionResult(
+            phq8_score=round(display_score, 2),
+            severity=FusionPredictionResult.severity_label(display_score),
+            num_chunks=min_chunks,
+            participant_id=participant_id,
+            inference_time_s=round(elapsed, 3),
+            item_scores=debug_info.get("item_scores") if debug_info else None,
+            debug=debug_info if debug else None,
+            confidence={
+                "mean": round(display_score, 2),
+                "std": 0.0,
+                "ci_lower": round(display_score, 2),
+                "ci_upper": round(display_score, 2),
+            },
+            audio_quality={
+                "rms": round(quality_details["rms"], 4),
+                "snr_db": round(quality_details["snr_db"], 2),
+                "speech_prob": round(quality_details["speech_prob"], 3),
+                "quality": round(quality_score, 3),
+            },
+            behavioral=behavioral,
         )
 
     def predict_from_features(
@@ -240,12 +383,15 @@ class FusionInferencePipeline:
         egemaps_features: np.ndarray,
         behavioral: Optional[np.ndarray] = None,
         participant_id: str = "unknown",
+        debug: bool = False,
     ) -> FusionPredictionResult:
         """
         Predict from pre-extracted features (for batch processing or testing).
         """
         predictor = self._get_predictor()
-        score = predictor.predict(text_features, mfcc_features, egemaps_features, behavioral)
+        score, debug_info = predictor.predict_with_debug(
+            text_features, mfcc_features, egemaps_features, behavioral
+        )
         display_score = max(0.0, min(24.0, score))
 
         return FusionPredictionResult(
@@ -253,6 +399,8 @@ class FusionInferencePipeline:
             severity=FusionPredictionResult.severity_label(display_score),
             num_chunks=text_features.shape[0],
             participant_id=participant_id,
+            item_scores=debug_info.get("item_scores") if debug and debug_info else None,
+            debug=debug_info if debug else None,
         )
 
     def predict_batch(self, audio_paths, participant_ids=None):

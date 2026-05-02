@@ -6,7 +6,7 @@ Request/response models for the REST API.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,12 @@ class PredictionResponse(BaseModel):
     phq8_score: float = Field(..., ge=0.0, le=24.0, description="Predicted PHQ-8 score (0-24)")
     severity: str = Field(..., description="Clinical severity category")
     num_chunks: int = Field(..., ge=0, description="Number of audio chunks processed")
+    item_scores: Optional[List[int]] = Field(
+        default=None, description="Optional 0-3 item-level scores"
+    )
+    debug: Optional[dict[str, Any]] = Field(
+        default=None, description="Optional debug payload with intermediate outputs"
+    )
     timestamp: str = Field(
         default_factory=lambda: datetime.utcnow().isoformat() + "Z",
         description="ISO 8601 UTC timestamp of prediction",
@@ -65,6 +71,12 @@ class ExtendedPredictionResponse(BaseModel):
     severity: str = Field(..., description="Clinical severity category")
     num_chunks: int = Field(..., ge=0, description="Number of audio chunks processed")
     inference_time_s: float = Field(..., description="Total inference time in seconds")
+    item_scores: Optional[List[int]] = Field(
+        default=None, description="Optional 0-3 item-level scores"
+    )
+    debug: Optional[dict[str, Any]] = Field(
+        default=None, description="Optional debug payload with intermediate outputs"
+    )
     timestamp: str = Field(
         default_factory=lambda: datetime.utcnow().isoformat() + "Z",
     )

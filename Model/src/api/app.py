@@ -80,8 +80,11 @@ def _init_pipeline(config: dict):
         return FusionInferencePipeline(
             fusion_checkpoint=artifacts.get("fusion_checkpoint", "checkpoints/best_fusion.pt"),
             text_checkpoint=artifacts.get("text_checkpoint", "checkpoints/best_model.pt"),
-            audio_config=config.get("audio"),
+            # Fusion preprocessor expects a full preprocessing config tree
+            # (audio + preprocessing + paths), not only the audio subsection.
+            audio_config=config,
             device=inference_cfg.get("device", "auto"),
+            use_text_transcription=inference_cfg.get("use_text_transcription", False),
         )
     else:
         logger.info("[API] Initializing TEXT-ONLY pipeline (legacy)")

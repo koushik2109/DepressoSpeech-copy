@@ -1,6 +1,7 @@
 """Async SQLAlchemy engine and session factory."""
 
 from sqlalchemy import event
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -61,3 +62,70 @@ async def init_db():
     import src.models  # noqa: F401 – registers models
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if "sqlite" in settings.DATABASE_URL:
+            await _run_sqlite_migrations(conn)
+
+
+async def _run_sqlite_migrations(conn):
+    async def _columns(table_name: str) -> set[str]:
+        result = await conn.execute(text(f"PRAGMA table_info({table_name})"))
+        rows = result.fetchall()
+        return {row[1] for row in rows}
+
+    async def _add_column(table_name: str, column_name: str, column_sql: str) -> None:
+        existing = await _columns(table_name)
+        if column_name not in existing:
+            await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}"))
+
+    await _add_column("doctors", "patient_count", "patient_count INTEGER NOT NULL DEFAULT 0")
+    await _add_column("assessments", "report_status", "report_status VARCHAR(16) NOT NULL DEFAULT 'pending'")
+    await _add_column("assessments", "is_report_ready", "is_report_ready BOOLEAN NOT NULL DEFAULT 0")
+    await _add_column("assessments", "doctor_remarks", "doctor_remarks TEXT")
+
+    await conn.execute(
+        text(
+            """
+            UPDATE doctors
+            SET patient_count = (
+                SELECT COUNT(DISTINCT da.patient_id)
+                FROM doctor_assignments da
+                WHERE da.doctor_id = doctors.id
+                  AND da.status IN ('accepted', 'completed')
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE assessments
+            SET
+                report_status = CASE
+                    WHEN status = 'completed' THEN 'available'
+                    ELSE COALESCE(report_status, 'pending')
+                END,
+                is_report_ready = CASE
+                    WHEN status = 'completed' THEN 1
+                    ELSE COALESCE(is_report_ready, 0)
+                END
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE assessments
+            SET
+                status = 'completed',
+                report_status = 'available',
+                is_report_ready = 1
+            WHERE id IN (
+                SELECT assessment_id
+                FROM processing_jobs
+                WHERE assessment_id IS NOT NULL
+                  AND status = 'succeeded'
+                  AND progress_pct >= 100
+            )
+            """
+        )
+    )

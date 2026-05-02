@@ -84,6 +84,12 @@ class EgemapsExtractor:
 
                 feat = self._smile.process_signal(chunk, sr)
                 feat_array = feat.values.flatten().astype(np.float32)
+                feat_array = np.nan_to_num(feat_array, nan=0.0, posinf=0.0, neginf=0.0)
+
+                if np.allclose(feat_array, 0.0) or np.isclose(feat_array.std(), 0.0):
+                    logger.warning(
+                        f"[VALIDATION_CHECK] Chunk {i}: eGeMAPS vector is near-constant or zero"
+                    )
 
                 if feat_array.shape[0] != self.EXPECTED_DIM:
                     logger.warning(
@@ -102,7 +108,10 @@ class EgemapsExtractor:
                 features_list.append(np.zeros(self.EXPECTED_DIM, dtype=np.float32))
 
         result = np.stack(features_list, axis=0)
-        logger.info(f"[DATA_FLOW] eGeMAPS extracted: {result.shape}")
+        logger.info(
+            f"[DATA_FLOW] eGeMAPS extracted: {result.shape}, "
+            f"mean={float(np.mean(result)):.4f}, std={float(np.std(result)):.4f}"
+        )
         return result
 
     # =========================================================

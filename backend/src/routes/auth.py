@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from database import get_db
-from src.models import User
+from src.models import Doctor, User
 from src.utils.auth import (
     hash_password,
     verify_password,
@@ -98,6 +98,12 @@ class GoogleAuthRequest(BaseModel):
     credential: str = Field(..., min_length=1)
 
 
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    age: Optional[int] = Field(default=None, ge=0, le=120)
+    basicInfo: Optional[str] = Field(default=None, max_length=2000)
+
+
 # ── Register ───────────────────────────────────────────
 
 @router.post("/register", status_code=201)
@@ -128,6 +134,18 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
+
+    if user.role == "doctor":
+        db.add(
+            Doctor(
+                user_id=user.id,
+                name=user.name,
+                email=user.email,
+                fee=100.0,
+                is_available=False,
+            )
+        )
+        await db.flush()
 
     # Send OTP email asynchronously (non-blocking)
     await send_otp_email_async(to_email=user.email, otp=otp, user_name=user.name)
@@ -381,6 +399,29 @@ async def logout(body: LogoutRequest):
 
 @router.get("/me")
 async def me(user: User = Depends(get_current_user)):
+    return {"user": _user_response(user)}
+
+
+@router.put("/me")
+async def update_me(
+    body: UpdateProfileRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if user.role != "patient":
+        raise HTTPException(status_code=403, detail="Patient profile update required.")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required.")
+        user.name = name
+    if body.age is not None:
+        user.age = body.age
+    if body.basicInfo is not None:
+        user.basic_info = body.basicInfo.strip() or None
+
+    await db.flush()
     return {"user": _user_response(user)}
 
 

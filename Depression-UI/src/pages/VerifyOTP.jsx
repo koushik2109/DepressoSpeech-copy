@@ -8,7 +8,6 @@ export default function VerifyOTP() {
   const navigate = useNavigate();
   const location = useLocation();
   const email = location.state?.email || '';
-  const userName = location.state?.userName || 'User';
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);

@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 const MAX_RECORDING_SECONDS = 120;
 const MIN_RECORDING_SECONDS = 5;
 const FFT_SIZE = 2048;
 const BAR_COUNT = 64;
 
-export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared }) {
+export default function VoiceRecorder({
+  onRecordingComplete,
+  onRecordingCleared,
+}) {
   const [isRecording, setIsRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [audioURL, setAudioURL] = useState('');
+  const [audioURL, setAudioURL] = useState("");
   const [recordingBlobSize, setRecordingBlobSize] = useState(0);
   const [level, setLevel] = useState(0);
   const [hasRecording, setHasRecording] = useState(false);
@@ -23,21 +26,29 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
   const dataArrayRef = useRef(null);
   const freqDataArrayRef = useRef(null);
   const recordedBlobRef = useRef(null);
-  const audioURLRef = useRef('');
+  const audioURLRef = useRef("");
   const secondsRef = useRef(0);
+  const waveformStatsRef = useRef({
+    length: 0,
+    min: 0,
+    max: 0,
+    sampleRate: 0,
+  });
 
   const formatTime = (value) => {
-    const minutes = Math.floor(value / 60).toString().padStart(2, '0');
-    const secondsValue = (value % 60).toString().padStart(2, '0');
+    const minutes = Math.floor(value / 60)
+      .toString()
+      .padStart(2, "0");
+    const secondsValue = (value % 60).toString().padStart(2, "0");
     return `${minutes}:${secondsValue}`;
   };
 
   const clearCurrentRecording = () => {
     if (audioURLRef.current) {
       URL.revokeObjectURL(audioURLRef.current);
-      audioURLRef.current = '';
+      audioURLRef.current = "";
     }
-    setAudioURL('');
+    setAudioURL("");
     setHasRecording(false);
     setRecordingBlobSize(0);
     recordedBlobRef.current = null;
@@ -49,19 +60,19 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
   const drawIdleLine = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext("2d");
     if (!context) return;
 
     const width = canvas.width;
     const height = canvas.height;
 
     context.clearRect(0, 0, width, height);
-    context.fillStyle = '#FAFAF7';
+    context.fillStyle = "#FAFAF7";
     context.fillRect(0, 0, width, height);
 
-    context.strokeStyle = '#D8F3DC';
+    context.strokeStyle = "#D8F3DC";
     context.lineWidth = Math.max(2, width / 240);
-    context.lineCap = 'round';
+    context.lineCap = "round";
     context.beginPath();
     context.moveTo(0, height / 2);
     context.lineTo(width, height / 2);
@@ -75,18 +86,31 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
     const freqDataArray = freqDataArrayRef.current;
     if (!canvas || !analyser || !dataArray || !freqDataArray) return;
 
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext("2d");
     if (!context) return;
 
     analyser.getByteTimeDomainData(dataArray);
+    let min = 255;
+    let max = 0;
+    for (let i = 0; i < dataArray.length; i += 1) {
+      const value = dataArray[i];
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+    waveformStatsRef.current = {
+      length: dataArray.length,
+      min: (min - 128) / 128,
+      max: (max - 128) / 128,
+      sampleRate: audioContextRef.current?.sampleRate || 0,
+    };
 
     const width = canvas.width;
     const height = canvas.height;
 
     context.clearRect(0, 0, width, height);
     const background = context.createLinearGradient(0, 0, width, height);
-    background.addColorStop(0, '#FAFAF7');
-    background.addColorStop(1, '#F0FAF4');
+    background.addColorStop(0, "#FAFAF7");
+    background.addColorStop(1, "#F0FAF4");
     context.fillStyle = background;
     context.fillRect(0, 0, width, height);
 
@@ -100,8 +124,8 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
       const y = (height - barHeight) / 2;
 
       const barGradient = context.createLinearGradient(0, y, 0, y + barHeight);
-      barGradient.addColorStop(0, '#52B788');
-      barGradient.addColorStop(1, '#2D6A4F');
+      barGradient.addColorStop(0, "#52B788");
+      barGradient.addColorStop(1, "#2D6A4F");
       context.fillStyle = barGradient;
       context.fillRect(x + barWidth * 0.15, y, barWidth * 0.7, barHeight);
     }
@@ -119,10 +143,10 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
       context.lineTo(x, y);
     }
 
-    context.strokeStyle = '#2D6A4F';
+    context.strokeStyle = "#2D6A4F";
     context.lineWidth = Math.max(2, width / 220);
-    context.lineJoin = 'round';
-    context.lineCap = 'round';
+    context.lineJoin = "round";
+    context.lineCap = "round";
     context.stroke();
 
     const sum = freqDataArray.reduce((total, current) => total + current, 0);
@@ -137,7 +161,10 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
     timerRef.current = null;
     setIsRecording(false);
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state === "recording"
+    ) {
       mediaRecorderRef.current.stop();
     }
 
@@ -174,7 +201,10 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
 
       streamRef.current = stream;
 
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext || window.webkitAudioContext
+      )();
+      console.debug("[AudioCapture] sampleRate", audioContext.sampleRate);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = FFT_SIZE;
       analyser.smoothingTimeConstant = 0.85;
@@ -187,8 +217,10 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
       dataArrayRef.current = new Uint8Array(analyser.fftSize);
       freqDataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
 
-      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate)) || 'audio/webm';
+      const mimeType =
+        ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
+          (candidate) => MediaRecorder.isTypeSupported(candidate),
+        ) || "audio/webm";
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -205,6 +237,11 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
 
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType });
+        if (!blob.size) {
+          console.warn("[AudioCapture] empty recording blob");
+          clearCurrentRecording();
+          return;
+        }
         recordedBlobRef.current = blob;
         setRecordingBlobSize(blob.size);
         setHasRecording(true);
@@ -214,8 +251,18 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
         setAudioURL(previewUrl);
 
         if (onRecordingComplete) {
-          onRecordingComplete(blob, previewUrl, secondsRef.current);
+          onRecordingComplete(
+            blob,
+            previewUrl,
+            secondsRef.current,
+            waveformStatsRef.current,
+          );
         }
+        console.debug("[AudioCapture] recording complete", {
+          blobSize: blob.size,
+          seconds: secondsRef.current,
+          waveform: waveformStatsRef.current,
+        });
       };
 
       recorder.start();
@@ -232,13 +279,14 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
         }
       }, 1000);
     } catch (error) {
-      const message = error.name === 'NotAllowedError'
-        ? 'Microphone permission was denied. Please allow access and try again.'
-        : error.name === 'NotFoundError'
-          ? 'No microphone was found on this device.'
-          : error.name === 'NotReadableError'
-            ? 'The microphone is in use by another application.'
-            : 'Microphone access failed. Please try again.';
+      const message =
+        error.name === "NotAllowedError"
+          ? "Microphone permission was denied. Please allow access and try again."
+          : error.name === "NotFoundError"
+            ? "No microphone was found on this device."
+            : error.name === "NotReadableError"
+              ? "The microphone is in use by another application."
+              : "Microphone access failed. Please try again.";
 
       alert(message);
     }
@@ -253,9 +301,9 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
       const ratio = window.devicePixelRatio || 1;
       canvas.width = Math.max(1, Math.floor(parent.clientWidth * ratio));
       canvas.height = Math.max(1, Math.floor(parent.clientHeight * ratio));
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      const context = canvas.getContext('2d');
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      const context = canvas.getContext("2d");
       if (context) {
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
       }
@@ -265,24 +313,30 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
     };
 
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-    return () => window.removeEventListener('resize', resizeCanvas);
+    window.addEventListener("resize", resizeCanvas);
+    return () => window.removeEventListener("resize", resizeCanvas);
   }, [isRecording]);
 
-  useEffect(() => () => {
-    clearInterval(timerRef.current);
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
-    if (audioContextRef.current) audioContextRef.current.close();
-    if (audioURLRef.current) URL.revokeObjectURL(audioURLRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      clearInterval(timerRef.current);
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (streamRef.current)
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      if (audioContextRef.current) audioContextRef.current.close();
+      if (audioURLRef.current) URL.revokeObjectURL(audioURLRef.current);
+    },
+    [],
+  );
 
   const canPlayback = hasRecording && audioURL;
 
   return (
     <div className="flex flex-col items-center gap-6 w-full">
       <div className="w-full">
-        <p className="text-xs font-medium text-[#777] uppercase tracking-wider mb-2.5">Voice Waveform</p>
+        <p className="text-xs font-medium text-[#777] uppercase tracking-wider mb-2.5">
+          Voice Waveform
+        </p>
         <div className="w-full h-28 rounded-2xl bg-[#FAFAF7] border border-[#E8E8E8] overflow-hidden shadow-sm">
           <canvas ref={canvasRef} className="w-full h-full" />
         </div>
@@ -291,33 +345,57 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
       <div className="flex items-center gap-4 w-full">
         {/* Left spacer mirrors the Level block so the timer is truly centred */}
         <div className="w-24 flex items-center justify-start">
-          {isRecording && <span className="inline-block w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-lg shadow-red-200" />}
+          {isRecording && (
+            <span className="inline-block w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-lg shadow-red-200" />
+          )}
         </div>
         <div className="text-center flex-1">
-          <span className="text-3xl font-bold text-[#1B1B1B] font-mono tracking-tight">{formatTime(seconds)}</span>
-          <p className="text-xs text-[#B5B5B5] mt-1">{isRecording ? 'Recording' : 'Ready'} • Max {formatTime(MAX_RECORDING_SECONDS)}</p>
+          <span className="text-3xl font-bold text-[#1B1B1B] font-mono tracking-tight">
+            {formatTime(seconds)}
+          </span>
+          <p className="text-xs text-[#B5B5B5] mt-1">
+            {isRecording ? "Recording" : "Ready"} • Max{" "}
+            {formatTime(MAX_RECORDING_SECONDS)}
+          </p>
         </div>
         <div className="w-24 text-right">
-          <p className="text-xs uppercase tracking-[0.16em] text-[#777]">Level</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-[#777]">
+            Level
+          </p>
           <div className="mt-2 h-2 rounded-full bg-gray-100 overflow-hidden">
-            <div className="h-full rounded-full bg-gradient-to-r from-[#52B788] to-[#2D6A4F] transition-all duration-150" style={{ width: `${Math.max(8, level * 100)}%` }} />
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#52B788] to-[#2D6A4F] transition-all duration-150"
+              style={{ width: `${Math.max(8, level * 100)}%` }}
+            />
           </div>
         </div>
       </div>
 
       <div className="relative">
-        {isRecording && <div className="absolute -inset-3 rounded-full bg-red-400/20 animate-pulse" />}
+        {isRecording && (
+          <div className="absolute -inset-3 rounded-full bg-red-400/20 animate-pulse" />
+        )}
         <button
           type="button"
           onClick={isRecording ? stopRecording : startRecording}
-          className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg hover:shadow-xl active:scale-95 font-semibold text-white text-sm ${isRecording ? 'bg-red-500 hover:bg-red-600 shadow-red-200' : 'bg-[#2D6A4F] hover:bg-[#1B3A2D] shadow-[#2D6A4F]/20'}`}
-          aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+          className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg hover:shadow-xl active:scale-95 font-semibold text-white text-sm ${isRecording ? "bg-red-500 hover:bg-red-600 shadow-red-200" : "bg-[#2D6A4F] hover:bg-[#1B3A2D] shadow-[#2D6A4F]/20"}`}
+          aria-label={isRecording ? "Stop recording" : "Start recording"}
         >
           {isRecording ? (
             <div className="w-7 h-7 rounded-md bg-white" />
           ) : (
-            <svg className="w-9 h-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6.75 6.75 0 006.75-6.75V8.25a6.75 6.75 0 10-13.5 0V12A6.75 6.75 0 0012 18.75zm0 0v2.5m-3.75 0h7.5" />
+            <svg
+              className="w-9 h-9 text-white"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 18.75a6.75 6.75 0 006.75-6.75V8.25a6.75 6.75 0 10-13.5 0V12A6.75 6.75 0 0012 18.75zm0 0v2.5m-3.75 0h7.5"
+              />
             </svg>
           )}
         </button>
@@ -330,15 +408,25 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
           </p>
         ) : canPlayback && seconds >= MIN_RECORDING_SECONDS ? (
           <div className="space-y-3">
-            <p className="text-sm font-medium text-[#777]">Recording saved ({seconds}s) — you can playback or re-record.</p>
+            <p className="text-sm font-medium text-[#777]">
+              Recording saved ({seconds}s) — you can playback or re-record.
+            </p>
             <div className="bg-white p-4 rounded-2xl border border-[#E8E8E8] shadow-sm">
-              <audio controls controlsList="nodownload" src={audioURL} className="w-full h-12" />
+              <audio
+                controls
+                controlsList="nodownload"
+                src={audioURL}
+                className="w-full h-12"
+              />
             </div>
-            <p className="text-xs text-[#B5B5B5]">File size: {(recordingBlobSize / 1024).toFixed(1)} KB</p>
+            <p className="text-xs text-[#B5B5B5]">
+              File size: {(recordingBlobSize / 1024).toFixed(1)} KB
+            </p>
           </div>
         ) : canPlayback && seconds < MIN_RECORDING_SECONDS ? (
           <p className="text-sm text-[#777]">
-            Recording too short ({seconds}s). Minimum {MIN_RECORDING_SECONDS}s required. Please re-record.
+            Recording too short ({seconds}s). Minimum {MIN_RECORDING_SECONDS}s
+            required. Please re-record.
           </p>
         ) : (
           <p className="text-sm font-medium text-[#777]">
@@ -353,8 +441,18 @@ export default function VoiceRecorder({ onRecordingComplete, onRecordingCleared 
           onClick={startRecording}
           className="text-sm text-[#2D6A4F] hover:text-[#1B3A2D] font-semibold flex items-center gap-2 transition-colors group hover:bg-[#D8F3DC] px-4 py-2 rounded-lg"
         >
-          <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+          <svg
+            className="w-4 h-4 group-hover:scale-110 transition-transform"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
+            />
           </svg>
           Re-record voice
         </button>

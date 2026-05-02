@@ -1,113 +1,254 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Loader from '../components/Loader.jsx';
-import { getProcessingStatus } from '../services/api.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import Loader from "../components/Loader.jsx";
+import {
+  getAssessmentDetail,
+  getProcessingStatus,
+  invalidateCache,
+} from "../services/api.js";
+
+const MAX_REVEAL_SECONDS = 60;
 
 const processingSteps = [
   {
-    label: 'Uploading Audio',
-    description: 'Sending voice recordings to the server',
-    duration: 1200,
+    label: "Loading Voice Responses",
+    description: "Preparing the recorded answers for analysis",
+    threshold: 10,
   },
   {
-    label: 'Analyzing Voice Patterns',
-    description: 'Running ML model on audio features',
-    duration: 2500,
+    label: "Analyzing Voice Patterns",
+    description: "Running the ML model on audio features",
+    threshold: 35,
   },
   {
-    label: 'Scoring Assessment',
-    description: 'Computing PHQ-8 severity',
-    duration: 1400,
+    label: "Generating Report",
+    description: "Building the PHQ-8 score report",
+    threshold: 80,
   },
   {
-    label: 'Opening Results',
-    description: 'Moving to the score report',
-    duration: 900,
+    label: "Completed",
+    description: "Report is ready to open",
+    threshold: 100,
   },
 ];
 
 const fastSteps = [
   {
-    label: 'Scoring Answers',
-    description: 'Adding the selected PHQ-8 values',
-    duration: 1200,
+    label: "Scoring Answers",
+    description: "Adding the selected PHQ-8 values",
+    threshold: 40,
   },
   {
-    label: 'Preparing Report',
-    description: 'Formatting the score summary',
-    duration: 1000,
+    label: "Preparing Report",
+    description: "Formatting the score summary",
+    threshold: 85,
   },
   {
-    label: 'Opening Results',
-    description: 'Moving to the score report',
-    duration: 800,
+    label: "Completed",
+    description: "Report is ready to open",
+    threshold: 100,
   },
 ];
 
-export default function Processing() {
-  const [activeStep, setActiveStep] = useState(0);
-  const navigate = useNavigate();
-  const pollRef = useRef(null);
+function readAssessment() {
+  try {
+    return JSON.parse(sessionStorage.getItem("latestAssessment") || "{}");
+  } catch {
+    return {};
+  }
+}
 
-  // Determine if ML processing is happening
-  const assessment = JSON.parse(sessionStorage.getItem('latestAssessment') || '{}');
-  const hasAudio = (assessment.recordingCount || 0) > 0;
+export default function Processing() {
+  const navigate = useNavigate();
+  const latestAssessment = useMemo(() => readAssessment(), []);
+  const hasAssessment = Boolean(latestAssessment.id);
+  const hasAudio = (latestAssessment.recordingCount || 0) > 0;
   const steps = hasAudio ? processingSteps : fastSteps;
+  const initialProgress =
+    latestAssessment.status === "completed" ||
+      latestAssessment.reportStatus === "available"
+      ? 100
+      : hasAudio
+        ? 5
+        : 0;
+  const [progress, setProgress] = useState(initialProgress);
+  const [status, setStatus] = useState(
+    !hasAssessment
+      ? "failed"
+      : latestAssessment.status === "completed" ||
+          latestAssessment.reportStatus === "available" ||
+          latestAssessment.isReportReady
+        ? "completed"
+        : hasAudio
+          ? "processing"
+          : "processing",
+  );
+  const [stage, setStage] = useState(
+    hasAudio ? "Loading voice responses" : "Preparing results",
+  );
+  const [error, setError] = useState(
+    hasAssessment ? "" : "Assessment not found. Please retake the assessment.",
+  );
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [stepReachedAt, setStepReachedAt] = useState(() => {
+    const reached = {};
+    for (const step of steps) {
+      if (initialProgress >= step.threshold) {
+        reached[step.threshold] = 0;
+      }
+    }
+    return reached;
+  });
+  const [forcedReady, setForcedReady] = useState(false);
+  const startedAtRef = useRef(0);
+  const hasNavigatedRef = useRef(false);
+
+  const isCompleted = status === "completed";
+  const isFailed = status === "failed";
+  const activeStep = isCompleted
+    ? steps.length
+    : steps.findIndex((step) => progress < step.threshold);
+  const displayStep =
+    activeStep === -1 ? steps.length - 1 : Math.max(0, activeStep);
+
+  const markCompletedSteps = useCallback((nextProgress, atSeconds = 0) => {
+    setStepReachedAt((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      for (const step of steps) {
+        if (nextProgress >= step.threshold && !next[step.threshold]) {
+          next[step.threshold] = atSeconds;
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [steps]);
 
   useEffect(() => {
-    if (!hasAudio) {
-      // Fast path: fake timer steps
-      if (activeStep < steps.length) {
-        const timer = setTimeout(() => setActiveStep((p) => p + 1), steps[activeStep].duration);
-        return () => clearTimeout(timer);
+    if (!latestAssessment.id) return undefined;
+    startedAtRef.current = Date.now();
+
+    let stopped = false;
+    let timerId = null;
+
+    const finishWithReport = async ({ forceOpen = false, elapsedAt = 0 } = {}) => {
+      const detail = await getAssessmentDetail(latestAssessment.id);
+      if (stopped) return;
+      sessionStorage.setItem("latestAssessment", JSON.stringify(detail));
+      invalidateCache("GET:/assessments");
+      setProgress(100);
+      setStatus("completed");
+      setStage(
+        forceOpen ? "Score ready (voice analysis continues)" : "Completed",
+      );
+      setForcedReady(forceOpen);
+      markCompletedSteps(100, elapsedAt);
+      if (!hasNavigatedRef.current) {
+        hasNavigatedRef.current = true;
+        timerId = window.setTimeout(() => navigate("/results"), 500);
       }
-      const navTimer = setTimeout(() => navigate('/results'), 800);
-      return () => clearTimeout(navTimer);
-    }
+    };
 
-    // ML path: poll backend for status
-    if (activeStep === 0) {
-      const t = setTimeout(() => setActiveStep(1), steps[0].duration);
-      return () => clearTimeout(t);
-    }
+    const pollStatus = async () => {
+      const nowMs = Date.now();
+      const elapsed = Math.floor((nowMs - startedAtRef.current) / 1000);
+      setElapsedSeconds(elapsed);
 
-    if (activeStep === 1 && assessment.id) {
-      // Poll every 2s until completed
-      const poll = async () => {
+      if (elapsed >= MAX_REVEAL_SECONDS && !hasNavigatedRef.current) {
         try {
-          const data = await getProcessingStatus(assessment.id);
-          if (data.status === 'completed') {
-            setActiveStep(2);
+          await finishWithReport({ forceOpen: true, elapsedAt: elapsed });
+        } catch (err) {
+          if (!stopped) {
+            setError(err.message || "Unable to open report.");
           }
-        } catch {
-          // On error, just proceed
-          setActiveStep(2);
         }
-      };
-      poll();
-      pollRef.current = setInterval(poll, 2000);
-      // Timeout after 30s regardless
-      const timeout = setTimeout(() => setActiveStep(2), 30000);
-      return () => {
-        clearInterval(pollRef.current);
-        clearTimeout(timeout);
-      };
-    }
+        return;
+      }
 
-    if (activeStep === 2) {
-      const t = setTimeout(() => setActiveStep(3), steps[2].duration);
-      return () => clearTimeout(t);
-    }
+      try {
+        const data = hasAudio
+          ? await getProcessingStatus(latestAssessment.id)
+          : {
+              status: "completed",
+              progress: 100,
+              stage: "Completed",
+              reportReady: true,
+            };
 
-    if (activeStep >= steps.length) {
-      const navTimer = setTimeout(() => navigate('/results'), 800);
-      return () => clearTimeout(navTimer);
-    }
-  }, [activeStep, hasAudio, navigate, assessment.id, steps]);
+        if (stopped) return;
 
-  const isComplete = activeStep >= steps.length;
-  const totalSteps = steps.length;
-  const progress = isComplete ? 100 : ((activeStep + 1) / totalSteps) * 100;
+        const nextProgress = Math.min(Number(data.progress ?? 0), 100);
+        setProgress((current) => Math.max(current, nextProgress));
+        markCompletedSteps(nextProgress, elapsed);
+        setStage(data.stage || "Generating report");
+        setStatus(
+          data.status === "failed"
+            ? "failed"
+            : data.reportReady ||
+                data.isReportReady ||
+                data.reportStatus === "available" ||
+                nextProgress >= 100
+              ? "completed"
+              : "processing",
+        );
+        setError("");
+
+        if (data.status === "failed") {
+          await finishWithReport({ forceOpen: true, elapsedAt: elapsed });
+          return;
+        }
+
+        if (
+          data.status === "completed" ||
+          data.reportReady ||
+          data.isReportReady ||
+          data.reportStatus === "available" ||
+          nextProgress >= 100
+        ) {
+          await finishWithReport({ forceOpen: false, elapsedAt: elapsed });
+          return;
+        }
+      } catch (err) {
+        if (!stopped) {
+          setError(err.message || "Unable to refresh processing status.");
+        }
+      }
+
+      if (!stopped) {
+        timerId = window.setTimeout(pollStatus, 1000);
+      }
+    };
+
+    pollStatus();
+
+    return () => {
+      stopped = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [hasAudio, latestAssessment.id, markCompletedSteps, navigate]);
+
+  const openReport = () => {
+    if (isCompleted) navigate("/results");
+  };
+
+  const getStepDuration = (index) => {
+    const endAt = stepReachedAt[steps[index].threshold];
+    if (!endAt) return null;
+    const prevThreshold = index > 0 ? steps[index - 1].threshold : null;
+    const startAt = prevThreshold
+      ? stepReachedAt[prevThreshold] || 0
+      : 0;
+    return Math.max(0, endAt - startAt);
+  };
+
+  const getActiveStepElapsed = (index) => {
+    const prevThreshold = index > 0 ? steps[index - 1].threshold : null;
+    const startAt = prevThreshold
+      ? stepReachedAt[prevThreshold] || 0
+      : 0;
+    return Math.max(0, elapsedSeconds - startAt);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-[#F7F7F2]">
@@ -131,23 +272,46 @@ export default function Processing() {
 
       <div className="w-full max-w-4xl text-center bg-white/80 backdrop-blur-md border border-[#E8E8E8] rounded-3xl shadow-[0_20px_60px_rgba(45,106,79,0.08)] px-6 py-10 md:px-10">
         <div className="flex justify-center mb-10 relative h-32">
-          {!isComplete ? (
-            <Loader size="lg" text={`Preparing results... ${Math.round(progress)}%`} />
+          {!isCompleted ? (
+            <Loader
+              size="lg"
+              text={`${isFailed ? "Failed" : "Generating"}... ${Math.round(progress)}%`}
+            />
           ) : (
             <div className="w-24 h-24 rounded-full bg-[#D8F3DC] flex items-center justify-center border-2 border-[#B7E4C7] animate-slide-in">
-              <svg className="w-12 h-12 text-[#2D6A4F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-12 h-12 text-[#2D6A4F]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
             </div>
           )}
         </div>
 
         <div className="mb-8">
+          <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#52B788] mb-2">
+            Status: {isCompleted ? "Completed" : isFailed ? "Failed" : stage}
+          </p>
           <h1 className="text-3xl font-bold text-[#1B1B1B] mb-2 animate-slide-in">
-            {isComplete ? 'Complete!' : 'Preparing your result...'}
+            {isCompleted
+              ? "Report ready"
+              : isFailed
+                ? "Generation failed"
+                : "Preparing your result..."}
           </h1>
-          <p className="text-base text-[#777] animate-slide-in" style={{ animationDelay: '0.1s' }}>
-            {isComplete ? 'Your score report is ready' : 'Your PHQ-8 score is being formatted'}
+          <p
+            className="text-base text-[#777] animate-slide-in"
+            style={{ animationDelay: "0.1s" }}
+          >
+            {error || (isCompleted ? "Your score report is ready" : stage)}
           </p>
         </div>
 
@@ -159,36 +323,56 @@ export default function Processing() {
             />
           </div>
           <p className="text-xs text-[#B5B5B5] mt-2 font-medium">
-            {Math.min(activeStep + 1, totalSteps)} of {totalSteps} steps
+            {Math.round(progress)}% complete
           </p>
+          <p className="text-xs text-[#6A766F] mt-1">
+            Elapsed {elapsedSeconds}s · Target ≤ {MAX_REVEAL_SECONDS}s
+          </p>
+          {forcedReady && (
+            <p className="text-xs text-[#2D6A4F] mt-2">
+              Score opened while voice analysis continues in the background.
+            </p>
+          )}
         </div>
 
         <div className="space-y-3 mb-6">
           {steps.map((step, i) => {
-            const isDone = i < activeStep;
-            const isActive = i === activeStep;
+            const isDone = isCompleted || progress >= step.threshold;
+            const isActive = !isCompleted && !isFailed && i === displayStep;
+            const stepDuration = getStepDuration(i);
 
             return (
               <div
-                key={i}
-                className={`relative flex items-center gap-3 p-3 rounded-lg border transition-all duration-300 ${isDone
-                    ? 'bg-[#F0FAF4] border-[#B7E4C7]'
+                key={step.label}
+                className={`relative flex items-center gap-3 p-3 rounded-lg border transition-all duration-300 ${
+                  isDone
+                    ? "bg-[#F0FAF4] border-[#B7E4C7]"
                     : isActive
-                      ? 'bg-[#FAFAF7] border-[#2D6A4F]/40 shadow-sm scale-[1.02]'
-                      : 'bg-white/60 border-[#E8E8E8] opacity-70'
-                  }`}
-                style={isActive ? { animation: 'slide-in 0.3s ease-out' } : {}}
+                      ? "bg-[#FAFAF7] border-[#2D6A4F]/40 shadow-sm scale-[1.02]"
+                      : "bg-white/60 border-[#E8E8E8] opacity-70"
+                }`}
+                style={isActive ? { animation: "slide-in 0.3s ease-out" } : {}}
               >
                 <div className="flex-shrink-0 relative w-8 h-8">
                   {isDone ? (
                     <div className="w-full h-full rounded-full bg-[#D8F3DC] flex items-center justify-center border border-[#52B788]">
-                      <svg className="w-4 h-4 text-[#2D6A4F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      <svg
+                        className="w-4 h-4 text-[#2D6A4F]"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
                       </svg>
                     </div>
                   ) : isActive ? (
                     <>
-                      <div className="absolute inset-0 rounded-full border-2 border-[#52B788]/30 animate-pulse-ring-anim" style={{ animation: 'pulse-ring-anim 1.5s infinite' }} />
+                      <div className="absolute inset-0 rounded-full border-2 border-[#52B788]/30 animate-pulse-ring-anim" />
                       <div className="w-full h-full rounded-full bg-gradient-to-br from-[#2D6A4F] to-[#52B788] flex items-center justify-center text-white text-sm font-semibold">
                         {i + 1}
                       </div>
@@ -201,13 +385,25 @@ export default function Processing() {
                 </div>
 
                 <div className="text-left flex-1">
-                  <p className={`text-sm font-semibold transition-colors ${isDone ? 'text-[#2D6A4F]' : isActive ? 'text-[#1B1B1B]' : 'text-[#B5B5B5]'}`}>
+                  <p
+                    className={`text-sm font-semibold transition-colors ${isDone ? "text-[#2D6A4F]" : isActive ? "text-[#1B1B1B]" : "text-[#B5B5B5]"}`}
+                  >
                     {step.label}
                   </p>
-                  <p className={`text-xs transition-colors ${isDone ? 'text-[#52B788]' : isActive ? 'text-[#777]' : 'text-[#D1D5DB]'}`}>
+                  <p
+                    className={`text-xs transition-colors ${isDone ? "text-[#52B788]" : isActive ? "text-[#777]" : "text-[#D1D5DB]"}`}
+                  >
                     {step.description}
                   </p>
                 </div>
+
+                <p className="text-[11px] font-semibold text-[#6A766F] min-w-14 text-right">
+                  {stepDuration != null
+                    ? `${stepDuration.toFixed(1)}s`
+                    : isActive
+                      ? `${getActiveStepElapsed(i).toFixed(1)}s`
+                      : "—"}
+                </p>
 
                 {isActive && (
                   <div className="flex gap-1">
@@ -225,11 +421,25 @@ export default function Processing() {
           })}
         </div>
 
-        {!isComplete && (
-          <p className="text-xs text-[#777] font-medium tracking-wide">
-            Please keep this window open.
-          </p>
-        )}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={openReport}
+            disabled={!isCompleted}
+            className={`w-full sm:w-auto rounded-xl px-6 py-3 text-sm font-bold transition-colors ${
+              isCompleted
+                ? "bg-[#1B3A2D] text-white hover:bg-[#2D6A4F]"
+                : "cursor-not-allowed bg-[#E8E8E8] text-[#9AA49F]"
+            }`}
+          >
+            Open Report
+          </button>
+          {!isCompleted && !isFailed && (
+            <p className="text-xs text-[#777] font-medium tracking-wide">
+              Please keep this window open.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

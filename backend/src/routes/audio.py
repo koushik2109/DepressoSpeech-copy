@@ -6,11 +6,13 @@ import aiofiles
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from src.models import User, MediaFile
-from src.middleware.deps import require_patient
+from src.models import MediaFile, User
+from src.middleware.deps import get_current_user, require_patient
 from config.settings import get_settings
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -75,3 +77,30 @@ async def upload_audio(
         "fileName": file.filename,
         "size": len(content),
     }
+
+
+@router.get("/audio/{file_id}")
+async def get_audio_file(
+    file_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a stored audio file for authorized report playback."""
+    media = (await db.execute(
+        select(MediaFile).where(MediaFile.id == file_id)
+    )).scalar_one_or_none()
+
+    if not media:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    if media.owner_user_id != user.id and user.role not in ("admin", "doctor"):
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    file_path = Path(settings.STORAGE_LOCAL_PATH) / media.storage_key
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file missing from storage")
+
+    return FileResponse(
+        file_path,
+        media_type=media.mime_type or "audio/webm",
+        filename=media.original_filename or file_path.name,
+    )

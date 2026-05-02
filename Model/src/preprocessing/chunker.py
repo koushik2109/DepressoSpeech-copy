@@ -38,6 +38,9 @@ class ChunkResult:
     participant_id: str
     chunks: List[AudioChunk] = field(default_factory=list)
     total_audio_duration: float = 0.0
+    raw_audio_duration: float = 0.0
+    vad_audio_duration: float = 0.0
+    silence_duration: float = 0.0
     num_chunks: int = 0
     sample_rate: int = 16000
 

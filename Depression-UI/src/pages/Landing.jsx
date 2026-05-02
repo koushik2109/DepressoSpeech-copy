@@ -43,7 +43,7 @@ export default function Landing() {
   };
 
   return (
-    <div className="pt-20 lg:pt-24">
+    <div className="pt-24 lg:pt-28">
       {/* ─── Hero Section ─── */}
       <section className="relative overflow-hidden">
         <div className="max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-36">

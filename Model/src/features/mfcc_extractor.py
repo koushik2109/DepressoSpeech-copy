@@ -92,6 +92,12 @@ class MfccExtractor:
 
                 stacked = np.vstack([mfcc, delta, delta2])
                 feat_vector = stacked.mean(axis=1).astype(np.float32)
+                feat_vector = np.nan_to_num(feat_vector, nan=0.0, posinf=0.0, neginf=0.0)
+
+                if np.allclose(feat_vector, 0.0) or np.isclose(feat_vector.std(), 0.0):
+                    logger.warning(
+                        f"[VALIDATION_CHECK] Chunk {i}: MFCC vector is near-constant or zero"
+                    )
 
                 if feat_vector.shape[0] != self.EXPECTED_DIM:
                     logger.warning(
@@ -110,7 +116,10 @@ class MfccExtractor:
                 features_list.append(np.zeros(self.EXPECTED_DIM, dtype=np.float32))
 
         result = np.stack(features_list, axis=0)
-        logger.info(f"[DATA_FLOW] MFCC extracted: {result.shape}")
+        logger.info(
+            f"[DATA_FLOW] MFCC extracted: {result.shape}, "
+            f"mean={float(np.mean(result)):.4f}, std={float(np.std(result)):.4f}"
+        )
         return result
 
     # =========================================================

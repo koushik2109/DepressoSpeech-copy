@@ -6,10 +6,10 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [user, setUser] = useState(() => getCurrentUser());
   const location = useLocation();
   const navigate = useNavigate();
   const profileMenuRef = useRef(null);
-  const user = getCurrentUser();
   const isGuest = !user;
   const isDoctor = user?.role === "doctor";
   const isPatient = user?.role === "patient";
@@ -20,11 +20,13 @@ export default function Navbar() {
     ? [
         { to: "/", label: "Home" },
         { to: "/doctor/dashboard", label: "Dashboard" },
+        { to: "/doctor/queue", label: "Queue" },
       ]
     : isPatient
       ? [
           { to: "/", label: "Home" },
           { to: "/assessment", label: "Assessment" },
+          { to: "/doctors", label: "Doctors" },
           { to: "/assessment-history", label: "History" },
         ]
       : [{ to: "/", label: "Home" }];
@@ -39,8 +41,11 @@ export default function Navbar() {
   };
 
   useEffect(() => {
-    setMobileOpen(false);
-    setProfileOpen(false);
+    const id = window.setTimeout(() => {
+      setMobileOpen(false);
+      setProfileOpen(false);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -62,17 +67,24 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    const handleSessionUpdate = () => setUser(getCurrentUser());
+    window.addEventListener("mindscope-session-updated", handleSessionUpdate);
+    return () =>
+      window.removeEventListener("mindscope-session-updated", handleSessionUpdate);
+  }, []);
+
   return (
     <nav
       className="fixed inset-x-0 top-0 z-50 transition-all duration-500"
       style={{
-        paddingTop: scrolled ? "8px" : "16px",
-        paddingLeft: "16px",
-        paddingRight: "16px",
+        paddingTop: scrolled ? "10px" : "16px",
+        paddingLeft: "14px",
+        paddingRight: "14px",
       }}
     >
       <div
-        className="max-w-6xl mx-auto transition-all duration-500"
+        className="max-w-7xl mx-auto transition-all duration-500"
         style={{
           background: scrolled
             ? "rgba(255, 255, 255, 0.72)"
@@ -88,12 +100,12 @@ export default function Navbar() {
             : "0 2px 20px rgba(0, 0, 0, 0.03)",
         }}
       >
-        <div className="h-14 px-5 flex items-center justify-between gap-4">
+        <div className="min-h-20 px-4 py-3 sm:px-5 md:px-7 flex items-center justify-between gap-4">
           {/* ── Logo ── */}
           <Link to="/" className="flex items-center gap-2.5 min-w-0 group">
-            <div className="w-8 h-8 rounded-lg bg-[#1B3A2D] flex items-center justify-center group-hover:bg-[#2D6A4F] transition-colors">
+            <div className="w-11 h-11 rounded-xl bg-[#1B3A2D] flex items-center justify-center group-hover:bg-[#2D6A4F] transition-colors">
               <svg
-                className="w-4 h-4 text-white"
+                className="w-6 h-6 text-white"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -106,18 +118,18 @@ export default function Navbar() {
                 />
               </svg>
             </div>
-            <span className="text-[15px] font-semibold text-[#1a1a1a] tracking-tight hidden sm:block">
+            <span className="text-[21px] font-bold text-[#1a1a1a] tracking-tight hidden sm:block">
               MindScope
             </span>
           </Link>
 
           {/* ── Center Nav Links ── */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-2">
             {navLinks.map((link) => (
               <Link
                 key={link.to}
                 to={link.to}
-                className={`relative px-3.5 py-1.5 text-[13px] font-medium rounded-lg transition-all duration-200 ${
+                className={`relative px-5 py-3 text-base font-bold rounded-xl transition-all duration-200 ${
                   isActive(link.to)
                     ? "text-[#1a1a1a] bg-black/[0.06]"
                     : "text-[#666] hover:text-[#1a1a1a] hover:bg-black/[0.04]"
@@ -134,13 +146,13 @@ export default function Navbar() {
               <div className="flex items-center gap-2">
                 <Link
                   to="/login"
-                  className="hidden sm:inline-flex px-3.5 py-1.5 text-[13px] font-medium text-[#666] hover:text-[#1a1a1a] rounded-lg hover:bg-black/[0.04] transition-all"
+                  className="hidden sm:inline-flex px-5 py-3 text-base font-bold text-[#666] hover:text-[#1a1a1a] rounded-xl hover:bg-black/[0.04] transition-all"
                 >
                   Log in
                 </Link>
                 <Link
                   to="/signup"
-                  className="inline-flex items-center px-4 py-1.5 text-[13px] font-semibold text-white bg-[#1a1a1a] rounded-lg hover:bg-[#333] transition-all active:scale-[0.97]"
+                  className="inline-flex min-h-12 items-center px-6 py-3 text-base font-bold text-white bg-[#1a1a1a] rounded-xl hover:bg-[#333] transition-all active:scale-[0.97]"
                 >
                   Get Started
                 </Link>
@@ -149,11 +161,11 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setProfileOpen((prev) => !prev)}
-                className="flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-lg hover:bg-black/[0.04] transition-all active:scale-[0.97]"
+                className="flex min-h-12 items-center gap-3 pl-2 pr-3 py-2 rounded-xl hover:bg-black/[0.04] transition-all active:scale-[0.97]"
                 id="profile-menu-trigger"
               >
                 <div className="relative">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#2D6A4F] to-[#52B788] text-white text-xs font-bold flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#2D6A4F] to-[#52B788] text-white text-base font-bold flex items-center justify-center">
                     {avatarText}
                   </div>
                   <div
@@ -161,7 +173,7 @@ export default function Navbar() {
                   />
                 </div>
                 <svg
-                  className={`w-3.5 h-3.5 text-[#666] transition-transform duration-200 ${profileOpen ? "rotate-180" : ""}`}
+                  className={`w-4 h-4 text-[#666] transition-transform duration-200 ${profileOpen ? "rotate-180" : ""}`}
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -250,6 +262,26 @@ export default function Navbar() {
                   {isPatient && (
                     <>
                       <Link
+                        to="/profile"
+                        className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+                        onClick={() => setProfileOpen(false)}
+                      >
+                        <svg
+                          className="w-4 h-4 text-white/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.964 0a9 9 0 10-11.964 0m11.964 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                        </svg>
+                        Profile
+                      </Link>
+                      <Link
                         to="/assessment"
                         className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
                         onClick={() => setProfileOpen(false)}
@@ -289,29 +321,91 @@ export default function Navbar() {
                         </svg>
                         History
                       </Link>
+                      <Link
+                        to="/doctors"
+                        className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+                        onClick={() => setProfileOpen(false)}
+                      >
+                        <svg
+                          className="w-4 h-4 text-white/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm6 2.25c0 4.556-4.03 8.25-9 8.25s-9-3.694-9-8.25S7.03 4.5 12 4.5s9 3.694 9 8.25z"
+                          />
+                        </svg>
+                        Doctors
+                      </Link>
                     </>
                   )}
                   {isDoctor && (
-                    <Link
-                      to="/doctor/dashboard"
-                      className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
-                      onClick={() => setProfileOpen(false)}
-                    >
-                      <svg
-                        className="w-4 h-4 text-white/30"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
+                    <>
+                      <Link
+                        to="/profile"
+                        className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+                        onClick={() => setProfileOpen(false)}
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z"
-                        />
-                      </svg>
-                      Dashboard
-                    </Link>
+                        <svg
+                          className="w-4 h-4 text-white/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.964 0a9 9 0 10-11.964 0m11.964 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                        </svg>
+                        Profile
+                      </Link>
+                      <Link
+                        to="/doctor/dashboard"
+                        className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+                        onClick={() => setProfileOpen(false)}
+                      >
+                        <svg
+                          className="w-4 h-4 text-white/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z"
+                          />
+                        </svg>
+                        Dashboard
+                      </Link>
+                      <Link
+                        to="/doctor/queue"
+                        className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-[13px] font-medium text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+                        onClick={() => setProfileOpen(false)}
+                      >
+                        <svg
+                          className="w-4 h-4 text-white/30"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4.5 6.75h15m-15 4.5h15m-15 4.5h15M6 18.75h12"
+                          />
+                        </svg>
+                        Queue
+                      </Link>
+                    </>
                   )}
                   <a
                     href="mailto:support@mindscope.ai"
@@ -366,11 +460,11 @@ export default function Navbar() {
             {/* Mobile hamburger */}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="md:hidden p-1.5 rounded-lg hover:bg-black/[0.04] text-[#666] transition-colors"
+              className="md:hidden min-h-12 min-w-12 p-3 rounded-xl hover:bg-black/[0.04] text-[#666] transition-colors"
               aria-label="Toggle menu"
             >
               <svg
-                className="w-5 h-5"
+                className="w-6 h-6"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -396,15 +490,15 @@ export default function Navbar() {
 
         {/* ── Mobile Menu ── */}
         {mobileOpen && (
-          <div className="md:hidden px-3 pb-3 animate-fade-in">
+          <div className="md:hidden px-3 pb-4 animate-fade-in">
             <div className="h-px bg-black/[0.06] mb-2" />
-            <div className="space-y-0.5">
+            <div className="space-y-2">
               {navLinks.map((link) => (
                 <Link
                   key={link.to}
                   to={link.to}
                   onClick={() => setMobileOpen(false)}
-                  className={`block px-3 py-2 text-[13px] font-medium rounded-lg transition-all ${
+                  className={`block min-h-12 px-4 py-3 text-base font-bold rounded-xl transition-all ${
                     isActive(link.to)
                       ? "bg-black/[0.06] text-[#1a1a1a]"
                       : "text-[#666] hover:bg-black/[0.04] hover:text-[#1a1a1a]"
@@ -418,7 +512,7 @@ export default function Navbar() {
             {!isGuest && (
               <>
                 <div className="h-px bg-black/[0.06] my-2" />
-                <div className="flex items-center gap-3 px-3 py-2">
+                <div className="flex items-center gap-3 px-3 py-3">
                   <div className="relative">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2D6A4F] to-[#52B788] text-white text-xs font-bold flex items-center justify-center">
                       {avatarText}
@@ -428,10 +522,10 @@ export default function Navbar() {
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-[#1a1a1a] truncate">
+                    <p className="text-[15px] font-semibold text-[#1a1a1a] truncate">
                       {user.name}
                     </p>
-                    <p className="text-[11px] text-[#999] truncate">
+                    <p className="text-[13px] text-[#777] truncate">
                       {user.email}
                     </p>
                   </div>
@@ -445,7 +539,7 @@ export default function Navbar() {
                 </div>
                 <button
                   onClick={handleSignOut}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                  className="w-full min-h-12 flex items-center gap-2 px-4 py-3 text-base font-bold text-red-600 rounded-xl hover:bg-red-50 transition-colors"
                 >
                   <svg
                     className="w-4 h-4"
@@ -468,18 +562,18 @@ export default function Navbar() {
             {isGuest && (
               <>
                 <div className="h-px bg-black/[0.06] my-2" />
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Link
                     to="/login"
                     onClick={() => setMobileOpen(false)}
-                    className="flex-1 text-center px-3 py-2 text-[13px] font-medium text-[#666] rounded-lg border border-black/[0.08] hover:bg-black/[0.04] transition-all"
+                    className="flex-1 min-h-12 text-center px-4 py-3 text-base font-bold text-[#666] rounded-xl border border-black/[0.08] hover:bg-black/[0.04] transition-all"
                   >
                     Log in
                   </Link>
                   <Link
                     to="/signup"
                     onClick={() => setMobileOpen(false)}
-                    className="flex-1 text-center px-3 py-2 text-[13px] font-semibold text-white bg-[#1a1a1a] rounded-lg hover:bg-[#333] transition-all"
+                    className="flex-1 min-h-12 text-center px-4 py-3 text-base font-bold text-white bg-[#1a1a1a] rounded-xl hover:bg-[#333] transition-all"
                   >
                     Get Started
                   </Link>

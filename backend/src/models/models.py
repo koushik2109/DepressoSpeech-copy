@@ -60,10 +60,57 @@ class User(Base):
 
     assessments = relationship("Assessment", back_populates="user", lazy="selectin")
     media_files = relationship("MediaFile", back_populates="owner", lazy="selectin")
+    doctor_profile = relationship("Doctor", back_populates="user", lazy="selectin", uselist=False)
 
     __table_args__ = (
         Index("ix_users_role", "role"),
         Index("ix_users_created_at", "created_at"),
+    )
+
+
+# ── Doctor Profiles ───────────────────────────────────
+
+class Doctor(Base):
+    __tablename__ = "doctors"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    name = Column(String(120), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    phone = Column(String(32), nullable=True)
+    fee = Column(Float, nullable=False, default=100.0)
+    is_available = Column(Boolean, default=False, nullable=False)
+    patient_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    user = relationship("User", back_populates="doctor_profile")
+    assignments = relationship("DoctorAssignment", back_populates="doctor", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_doctors_fee_available", "fee", "is_available"),
+    )
+
+
+# ── Doctor Assignments ────────────────────────────────
+
+class DoctorAssignment(Base):
+    __tablename__ = "doctor_assignments"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    doctor_id = Column(String(36), ForeignKey("doctors.id"), nullable=False, index=True)
+    patient_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    assessment_id = Column(String(36), ForeignKey("assessments.id"), nullable=True, index=True)
+    status = Column(String(16), default="pending")  # pending | accepted | rejected | completed
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    doctor = relationship("Doctor", back_populates="assignments")
+    patient = relationship("User", lazy="selectin", foreign_keys=[patient_id])
+    assessment = relationship("Assessment", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_doctor_assignments_patient_created", "patient_id", "created_at"),
+        Index("ix_doctor_assignments_doctor_created", "doctor_id", "created_at"),
     )
 
 
@@ -79,6 +126,9 @@ class Assessment(Base):
     severity = Column(String(32), nullable=True)
     recording_count = Column(SmallInteger, default=0)
     status = Column(String(16), default="completed")  # completed | processing | failed
+    report_status = Column(String(16), default="pending")  # pending | available
+    is_report_ready = Column(Boolean, default=False, nullable=False)
+    doctor_remarks = Column(Text, nullable=True)
 
     # ML inference results
     ml_score = Column(Float, nullable=True)

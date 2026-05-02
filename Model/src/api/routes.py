@@ -187,6 +187,7 @@ async def predict_single(
     request: Request,
     file: UploadFile = File(..., description="Audio file (wav, mp3, flac, ogg, m4a, webm)"),
     participant_id: str = Query("unknown", description="Optional participant identifier"),
+    debug: bool = Query(False, description="Return debug payload"),
     _api_key: Optional[str] = Depends(verify_api_key),
 ):
     """
@@ -206,6 +207,7 @@ async def predict_single(
             result = pipeline.predict_from_audio(
                 audio_path=tmp_path,
                 participant_id=participant_id,
+                debug=debug,
             )
         inference_ms = (time.perf_counter() - t0) * 1000
 
@@ -214,6 +216,8 @@ async def predict_single(
             phq8_score=result.phq8_score,
             severity=result.severity,
             num_chunks=result.num_chunks,
+            item_scores=result.item_scores,
+            debug=result.debug if debug else None,
         )
 
         # Log to database (non-blocking — don't fail request on DB error)
@@ -251,6 +255,7 @@ async def predict_extended(
     request: Request,
     file: UploadFile = File(..., description="Audio file (wav, mp3, flac, ogg, m4a, webm)"),
     participant_id: str = Query("unknown", description="Optional participant identifier"),
+    debug: bool = Query(False, description="Return debug payload"),
     _api_key: Optional[str] = Depends(verify_api_key),
 ):
     """
@@ -267,6 +272,7 @@ async def predict_extended(
             result = pipeline.predict_from_audio_extended(
                 audio_path=tmp_path,
                 participant_id=participant_id,
+                debug=debug,
             )
 
         response = ExtendedPredictionResponse(
@@ -275,6 +281,8 @@ async def predict_extended(
             severity=result.severity,
             num_chunks=result.num_chunks,
             inference_time_s=result.inference_time_s,
+            item_scores=result.item_scores,
+            debug=result.debug if debug else None,
             confidence=result.confidence,
             audio_quality=result.audio_quality,
             behavioral=result.behavioral,

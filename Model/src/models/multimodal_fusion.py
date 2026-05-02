@@ -107,20 +107,38 @@ class MultimodalFusion(nn.Module):
         """Load pretrained text-only model weights and freeze the text branch."""
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         state = ckpt["model_state_dict"]
+        loaded_any = False
 
-        self.text_bn.weight.data.copy_(state["pool_norm.weight"])
-        self.text_bn.bias.data.copy_(state["pool_norm.bias"])
-        self.text_bn.running_mean.copy_(state["pool_norm.running_mean"])
-        self.text_bn.running_var.copy_(state["pool_norm.running_var"])
-        self.text_bn.num_batches_tracked.copy_(state["pool_norm.num_batches_tracked"])
+        def _copy_param(target, key: str) -> bool:
+            src = state.get(key)
+            if src is None:
+                logger.warning(f"Text preload skipped: missing key '{key}'")
+                return False
+            if tuple(src.shape) != tuple(target.shape):
+                logger.warning(
+                    "Text preload skipped: shape mismatch for '%s' (checkpoint=%s, model=%s)",
+                    key,
+                    tuple(src.shape),
+                    tuple(target.shape),
+                )
+                return False
+            target.copy_(src)
+            return True
 
-        self.text_head.weight.data.copy_(state["output_head.weight"])
-        self.text_head.bias.data.copy_(state["output_head.bias"])
+        loaded_any |= _copy_param(self.text_bn.weight.data, "pool_norm.weight")
+        loaded_any |= _copy_param(self.text_bn.bias.data, "pool_norm.bias")
+        loaded_any |= _copy_param(self.text_bn.running_mean, "pool_norm.running_mean")
+        loaded_any |= _copy_param(self.text_bn.running_var, "pool_norm.running_var")
+        loaded_any |= _copy_param(self.text_bn.num_batches_tracked, "pool_norm.num_batches_tracked")
+        loaded_any |= _copy_param(self.text_head.weight.data, "output_head.weight")
+        loaded_any |= _copy_param(self.text_head.bias.data, "output_head.bias")
 
-        self.freeze_text()
-
-        ccc = ckpt.get("metrics", {}).get("ccc", "?")
-        logger.info(f"Loaded pretrained text model (CCC={ccc}), text branch frozen")
+        if loaded_any:
+            self.freeze_text()
+            ccc = ckpt.get("metrics", {}).get("ccc", "?")
+            logger.info(f"Loaded pretrained text model (CCC={ccc}), text branch frozen")
+        else:
+            logger.warning("Skipped text checkpoint preload due to incompatible checkpoint shapes/keys")
 
     def freeze_text(self):
         self._text_frozen = True
@@ -180,6 +198,11 @@ class MultimodalFusion(nn.Module):
 
         # Scale text contribution so audio/behavioral residual has more influence
         return text_scale * text_pred + residual
+
+    def predict_text_only(self, text, mask):
+        t = self.text_pool(text, mask)
+        t = self.text_bn(t)
+        return self.text_head(t)
 
     def param_summary(self):
         def _count(module, trainable_only=False):
